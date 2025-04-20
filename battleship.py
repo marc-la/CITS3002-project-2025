@@ -371,6 +371,16 @@ def run_two_play_game_online(rfiles, wfiles):
         wfiles[player].write(msg + '\n')
         wfiles[player].flush()
 
+    def send_board(player, board):
+        wfiles[player].write("GRID\n")
+        wfiles[player].write("  " + " ".join(str(i + 1).rjust(2) for i in range(board.size)) + '\n')
+        for r in range(board.size):
+            row_label = chr(ord('A') + r)
+            row_str = " ".join(board.display_grid[r][c] for c in range(board.size))
+            wfiles[player].write(f"{row_label:2} {row_str}\n")
+        wfiles[player].write('\n')
+        wfiles[player].flush()
+
     def broadcast(msg):
         """Send a message to both players."""
         for wfile in wfiles:
@@ -397,7 +407,7 @@ def run_two_play_game_online(rfiles, wfiles):
 
     while True:
         send(current_player, "Your Turn. Enter a coordinate to fire at (e.g., B5):")
-        send(current_player, boards[current_player])
+        send_board(current_player, boards[current_player])
         send(other_player, "Waiting for the other player to take their turn...")
 
         # Get the current player's move
