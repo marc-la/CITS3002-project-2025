@@ -9,7 +9,7 @@ Uses threading to fix message synchronisation issues between server and user inp
 
 import socket
 import threading
-HOST = '127.0.0.1'
+HOST = '172.30.96.23'
 PORT = 5000
 
 def receive_messages(rfile):
@@ -44,7 +44,7 @@ def main():
         # Start a background thread for receiving messages
         receiver_thread = threading.Thread(target=receive_messages, args=(rfile,), daemon=True)
         receiver_thread.start()
-        
+
         try:
             while True:
                 # Main thread handles sending user input
