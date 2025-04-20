@@ -9,7 +9,7 @@ Uses threading to fix message synchronisation issues between server and user inp
 
 import socket
 import threading
-HOST = '172.30.96.23'
+HOST = '0.0.0.0'
 PORT = 5000
 
 def receive_messages(rfile):

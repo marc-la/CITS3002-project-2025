@@ -372,12 +372,24 @@ def run_two_play_game_online(rfiles, wfiles):
         wfiles[player].flush()
 
     def send_board(player, board):
+        """
+        Send the player's board to them, showing their guesses on the left
+        and their placed ships on the right, aligned properly.
+        """
         wfiles[player].write("GRID\n")
-        wfiles[player].write("  " + " ".join(str(i + 1).rjust(2) for i in range(board.size)) + '\n')
+        
+        # Column headers for both grids
+        header = "    " + " ".join(str(i + 1).rjust(2) for i in range(board.size)) + "     " + " ".join(str(i + 1).rjust(2) for i in range(board.size))
+        wfiles[player].write(header + '\n')
+        
+        # Rows with guesses on the left and ships on the right
         for r in range(board.size):
             row_label = chr(ord('A') + r)
-            row_str = " ".join(board.display_grid[r][c] for c in range(board.size))
-            wfiles[player].write(f"{row_label:2} {row_str}\n")
+            guesses_row = " ".join(board.display_grid[r][c] for c in range(board.size))
+            ships_row = " ".join(board.hidden_grid[r][c] for c in range(board.size))
+            aligned_row = f"{row_label:2}  {guesses_row}     {row_label:2}  {ships_row}"
+            wfiles[player].write(aligned_row + '\n')
+        
         wfiles[player].write('\n')
         wfiles[player].flush()
 
