@@ -359,6 +359,86 @@ def run_single_player_game_online(rfile, wfile):
         except ValueError as e:
             send(f"Invalid input: {e}")
 
+def run_two_play_game_online(rfiles, wfiles):
+    """
+    Runs a two-player Battleship game.
+    Expects:
+      - rfiles: list of file-like objects to .readline() from players
+      - wfiles: list of file-like objects to .write() back to players
+    """
+    def send(player, msg):
+        """Send a message to a specific player."""
+        wfiles[player].write(msg + '\n')
+        wfiles[player].flush()
+
+    def broadcast(msg):
+        """Send a message to both players."""
+        for wfile in wfiles:
+            wfile.write(msg + '\n')
+            wfile.flush()
+
+    def recv(player):
+        """Receive input from a specific player."""
+        return rfiles[player].readline().strip()
+
+    # Initialize board
+    boards = [Board(BOARD_SIZE), Board(BOARD_SIZE)]
+
+    # T1.3 Place ship randomly FOR NOW, change to manual later
+    for player in range(2):
+        send(player, "Welcome to Battleship! Place your ships.")
+        boards[player].place_ships_randomly(SHIPS) 
+        send(player, "Your ships have been placed.")
+
+    # Start gameplay
+    current_player = 0
+    other_player = 1
+    broadcast("The game begins! Players will alternate turns firing at each other.")
+
+    while True:
+        send(current_player, "Your Turn. Enter a coordinate to fire at (e.g., B5):")
+        send(other_player, "Waiting for the other player to take their turn...")
+
+        # Get the current player's move
+        try:
+            guess = recv(current_player)
+            # FORFEIT LOGIC
+            # if guess.lower() == 'quit':
+            #     broadcast(f"Player {current_player + 1} has forfeited. Game over.")
+            #     return
+
+            row, col = parse_coordinate(guess)
+            result, sunk_name = boards[other_player].fire_at(row, col)
+
+            # Process the result of the shot
+            if result == 'hit':
+                if sunk_name:
+                    send(current_player, f"HIT! You sank the {sunk_name}!")
+                    send(other_player, f"Your {sunk_name} has been sunk!")
+                else:
+                    send(current_player, "HIT!")
+                    send(other_player, "The opponent hit one of your ships!")
+            elif result == 'miss':
+                send(current_player, "MISS!")
+                send(other_player, "The opponent missed!")
+            elif result == 'already_shot':
+                send(current_player, "You've already fired at that location. Try again.")
+                continue  
+
+            # Check if game is over
+            if boards[other_player].all_ships_sunk():
+                send(current_player, "Congratulations! You sank all the opponent's ships. You win!")
+                send(other_player, "All your ships have been sunk. You lose!")
+                broadcast("Game over.")
+                return
+
+        except ValueError as e:
+            send(current_player, f"Invalid input: {e}. Try again.")
+            continue 
+
+        current_player, other_player = other_player, current_player
+
+
 if __name__ == "__main__":
     # Optional: run this file as a script to test single-player mode
     run_single_player_game_locally()
