@@ -372,7 +372,7 @@ def run_two_play_game_online(rfiles, wfiles):
         wfiles[player].flush()
 
 
-    def send_board(player, board):
+    def send_board(player, player_board, other_board):
         """
         Send the player's board to them, showing:
         - Left: opponent's board view (guesses)
@@ -394,14 +394,14 @@ def run_two_play_game_online(rfiles, wfiles):
         wfiles[player].write("[YOUR GUESSES]".ljust(32) + "[YOUR BOARD]\n")
 
         # Column headers for both grids
-        col_header = ".  " + "".join(str(i + 1).ljust(2) for i in range(board.size))
+        col_header = ".  " + "".join(str(i + 1).ljust(2) for i in range(player_board.size))
         wfiles[player].write(col_header.ljust(32) + col_header + '\n')
 
         # Each row: label + guesses on left, ships on right
-        for r in range(board.size):
+        for r in range(player_board.size):
             row_label = chr(ord('A') + r)
-            guesses_row = " ".join(board.display_grid[r])
-            ships_row = " ".join(board.hidden_grid[r])
+            guesses_row = " ".join(other_board.display_grid[r])
+            ships_row = " ".join(player_board.hidden_grid[r])
             aligned_row = f"{row_label:2} {guesses_row}".ljust(32) + f"{row_label:2} {ships_row}"
             wfiles[player].write(aligned_row + '\n')
 
@@ -434,7 +434,7 @@ def run_two_play_game_online(rfiles, wfiles):
     broadcast("The game begins! Players will alternate turns firing at each other.")
 
     while True:
-        send_board(current_player, boards[current_player])
+        send_board(current_player, boards[current_player], boards[other_player])
         send(current_player, "Your Turn. Enter a coordinate to fire at (e.g., B5):")
         send(other_player, "Waiting for the other player to take their turn...")
 
