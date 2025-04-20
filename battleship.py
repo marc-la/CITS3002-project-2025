@@ -371,27 +371,43 @@ def run_two_play_game_online(rfiles, wfiles):
         wfiles[player].write(msg + '\n')
         wfiles[player].flush()
 
+
     def send_board(player, board):
         """
-        Send the player's board to them, showing their guesses on the left
-        and their placed ships on the right, aligned properly.
-        """
-        wfiles[player].write("GRID\n")
-        
+        Send the player's board to them, showing:
+        - Left: opponent's board view (guesses)
+        - Right: their own board with ships
+
+        [YOUR GUESSES]                  [YOUR BOARD]
+            1 2 3 4 5 6 7 8 9 10            1 2 3 4 5 6 7 8 9 10
+        A  . . . . . . . . . .          A  . . . . . . . . . .
+        B  . . . . . . . . . .          B  . . . . . . . . . .
+        C  . . . . . . . . . .          C  . . . S S S S S S .
+        D  . . . . . . . . . .          D  . . . S . . . . . S
+        E  . . . . . . . . . .          E  S S S . . . . . . S
+        F  . . . . . . . . . .          F  . . . . . . . . . S
+        G  . . . . . . . . . .          G  . . . . S S S . . S
+        H  . . . . . . . . . .          H  . . . . . . . . . .
+        I  . . . . . . . . . .          I  . . . . . . . . . .
+        J  . . . . . . . . . .          J  . . . . . . . . . .
+    """
+        wfiles[player].write("[YOUR GUESSES]".ljust(32) + "[YOUR BOARD]\n")
+
         # Column headers for both grids
-        header = "    " + " ".join(str(i + 1).rjust(2) for i in range(board.size)) + "     " + " ".join(str(i + 1).rjust(2) for i in range(board.size))
-        wfiles[player].write(header + '\n')
-        
-        # Rows with guesses on the left and ships on the right
+        col_header = ".  " + "".join(str(i + 1).ljust(2) for i in range(board.size))
+        wfiles[player].write(col_header.ljust(32) + col_header + '\n')
+
+        # Each row: label + guesses on left, ships on right
         for r in range(board.size):
             row_label = chr(ord('A') + r)
-            guesses_row = " ".join(board.display_grid[r][c] for c in range(board.size))
-            ships_row = " ".join(board.hidden_grid[r][c] for c in range(board.size))
-            aligned_row = f"{row_label:2}  {guesses_row}     {row_label:2}  {ships_row}"
+            guesses_row = " ".join(board.display_grid[r])
+            ships_row = " ".join(board.hidden_grid[r])
+            aligned_row = f"{row_label:2} {guesses_row}".ljust(32) + f"{row_label:2} {ships_row}"
             wfiles[player].write(aligned_row + '\n')
-        
+
         wfiles[player].write('\n')
         wfiles[player].flush()
+
 
     def broadcast(msg):
         """Send a message to both players."""
