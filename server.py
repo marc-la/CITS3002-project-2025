@@ -8,7 +8,7 @@ Uses the two-player game logic defined in battleship.py (run_two_player_game_onl
 """
 
 import socket, threading
-from battleship import run_single_player_game_online, run_two_player_game_online
+from battleship import run_single_player_game_online, run_two_play_game_online
 
 HOST = '127.0.0.1'
 PORT = 5000
@@ -44,13 +44,11 @@ def main():
 
         try: 
             # Makefile wrappers
-            rfile1 = conns[0].makefile('r')
-            wfile1 = conns[0].makefile('w')
-            rfile2 = conns[1].makefile('r')
-            wfile2 = conns[1].makefile('w')
+            rfiles = [conns[0].makefile('r'), conns[1].makefile('r')]
+            wfiles = [conns[0].makefile('w'), conns[1].makefile('w')]
 
             # Start the game between the two players
-            run_two_player_game_online(rfiles, wfiles)
+            run_two_play_game_online(rfiles, wfiles)
 
         except KeyboardInterrupt:
             print("\n[INFO] Server shutting down...")
