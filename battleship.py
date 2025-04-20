@@ -434,8 +434,8 @@ def run_two_play_game_online(rfiles, wfiles):
     broadcast("The game begins! Players will alternate turns firing at each other.")
 
     while True:
-        send(current_player, "Your Turn. Enter a coordinate to fire at (e.g., B5):")
         send_board(current_player, boards[current_player])
+        send(current_player, "Your Turn. Enter a coordinate to fire at (e.g., B5):")
         send(other_player, "Waiting for the other player to take their turn...")
 
         # Get the current player's move
