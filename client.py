@@ -11,7 +11,7 @@ TODO: Fix the message synchronization issue using concurrency (Tier 1, item 1).
 
 import socket, threading
 HOST = '127.0.0.1'
-PORT = 5001
+PORT = 5000
 
 # HINT: The current problem is that the client is reading from the socket,
 # then waiting for user input, then reading again. This causes server
