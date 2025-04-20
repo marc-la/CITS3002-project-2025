@@ -4,24 +4,13 @@
 client.py
 
 Connects to a Battleship server which runs the single-player game.
-Simply pipes user input to the server, and prints all server responses.
-
-TODO: Fix the message synchronization issue using concurrency (Tier 1, item 1).
+Uses threading to fix message synchronisation issues between server and user input.
 """
 
-import socket, threading
+import socket
+import threading
 HOST = '127.0.0.1'
 PORT = 5000
-
-# HINT: The current problem is that the client is reading from the socket,
-# then waiting for user input, then reading again. This causes server
-# messages to appear out of order.
-#
-# Consider using Python's threading module to separate the concerns:
-# - One thread continuously reads from the socket and displays messages
-# - The main thread handles user input and sends it to the server
-#
-# import threading
 
 def receive_messages(rfile):
     """Continuously receive and display messages from the server"""
@@ -31,9 +20,10 @@ def receive_messages(rfile):
             if not line:
                 print("[INFO] Server disconnected.")
                 break
+
             line = line.strip()
             if line == "GRID":
-                # Begin reading board lines
+                # Read and display the board grid
                 print("\n[Board]")
                 while True:
                     board_line = rfile.readline()
@@ -41,7 +31,6 @@ def receive_messages(rfile):
                         break
                     print(board_line.strip())
             else:
-                # Normal message
                 print(line)
     except Exception as e:
         print(f"[ERROR] Error receiving messages: {e}")
@@ -52,8 +41,10 @@ def main():
         rfile = s.makefile('r')
         wfile = s.makefile('w')
 
+        # Start a background thread for receiving messages
         receiver_thread = threading.Thread(target=receive_messages, args=(rfile,), daemon=True)
         receiver_thread.start()
+        
         try:
             while True:
                 # Main thread handles sending user input
