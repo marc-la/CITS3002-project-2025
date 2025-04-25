@@ -408,7 +408,6 @@ def run_two_play_game_online(rfiles, wfiles):
         wfiles[player].write('\n')
         wfiles[player].flush()
 
-
     def broadcast(msg):
         """Send a message to both players."""
         for wfile in wfiles:
@@ -447,8 +446,14 @@ def run_two_play_game_online(rfiles, wfiles):
             # if guess.lower() == 'quit':
             #     broadcast(f"Player {current_player + 1} has forfeited. Game over.")
             #     return
+            try:
+                row, col = parse_coordinate(guess)
+                print_board = True
+            except ValueError as e:
+                send(current_player, f"Invalid input: {e}. Try again.")
+                print_board = False
+                continue  # Retry the turn
 
-            row, col = parse_coordinate(guess)
             result, sunk_name = boards[other_player].fire_at(row, col)
 
             # Process the result of the shot

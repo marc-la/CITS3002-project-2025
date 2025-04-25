@@ -10,8 +10,8 @@ Uses the two-player game logic defined in battleship.py (run_two_player_game_onl
 import socket, threading
 from battleship import run_single_player_game_online, run_two_play_game_online
 
-HOST = '0.0.0.0'
-PORT = 5001
+HOST = '127.0.0.1'
+PORT = 5000
 
 def handle_client(conn, addr, player_id, rfiles, wfiles, game_over_event):
     """
