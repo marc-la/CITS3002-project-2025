@@ -3,12 +3,13 @@
 """
 server.py
 
-Tier 1.2: Enables two players to connect and play Battleship against each other.
-Uses the two-player game logic defined in battleship.py (run_two_player_game_online).
+Tier 2.2: Enables multiple games of Battleship to be played without restarting the server.
+Uses the two-player game logic defined in battleship.py (run_two_play_game_online).
 """
 
-import socket, threading
-from battleship import run_single_player_game_online, run_two_play_game_online
+import socket
+import threading
+from battleship import run_two_play_game_online
 
 HOST = '127.0.0.1'
 PORT = 5000
@@ -48,10 +49,13 @@ def handle_client(conn, addr, player_id, rfiles, wfiles, game_over_event):
         print(f"[ERROR] Exception while handling client {addr}: {e}")
     finally:
         print(f"[INFO] Player {player_id + 1} disconnected.")
+        # Ensure the other player is also disconnected
+        game_over_event.set()
 
 def main():
     """
     Main server function to accept connections and handle clients using threads.
+    Supports multiple games without restarting the server.
     """
     print(f"[INFO] Server listening on {HOST}:{PORT}")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -60,37 +64,42 @@ def main():
         s.listen(2)  # Allow up to 2 connections
         print("[INFO] Waiting for players to connect...")
 
-        # Shared lists to store file-like objects for both players
-        rfiles = [None, None]
-        wfiles = [None, None]
+        while True:
+            # Shared lists to store file-like objects for both players
+            rfiles = [None, None]
+            wfiles = [None, None]
 
-        # Event to signal when the game is over
-        game_over_event = threading.Event()
+            # Event to signal when the game is over
+            game_over_event = threading.Event()
 
-        try:
-            # Accept exactly two players
-            for player_id in range(2):
-                conn, addr = s.accept()
-                client_thread = threading.Thread(
-                    target=handle_client, args=(conn, addr, player_id, rfiles, wfiles, game_over_event), daemon=True
-                )
-                client_thread.start()
+            try:
+                # Accept exactly two players
+                for player_id in range(2):
+                    conn, addr = s.accept()
+                    client_thread = threading.Thread(
+                        target=handle_client, args=(conn, addr, player_id, rfiles, wfiles, game_over_event), daemon=True
+                    )
+                    client_thread.start()
 
-            # Wait for the game to finish
-            game_over_event.wait()  # Block until the game is over
-            print("[INFO] Game has ended. Shutting down server.")
+                # Wait for the game to finish or a disconnection
+                game_over_event.wait()  # Block until the game is over or a client disconnects
+                print("[INFO] Game has ended or a client disconnected.")
 
-        except KeyboardInterrupt:
-            print("\n[INFO] Server shutting down...")
-        except Exception as e:
-            print(f"[ERROR] Server error: {e}")
-            
-# HINT: For multiple clients, you'd need to:
-# 1. Accept connections in a loop
-# 2. Handle each client in a separate thread
-# 3. Import threading and create a handle_client function
+                # Disconnect both players
+                for wfile in wfiles:
+                    if wfile:
+                        try:
+                            wfile.write("The game has ended or a player disconnected. Disconnecting...\n")
+                            wfile.flush()
+                        except Exception:
+                            pass  # Ignore errors during disconnection
+                print("[INFO] Returning to waiting for new connections...")
+
+            except KeyboardInterrupt:
+                print("\n[INFO] Server shutting down...")
+                break
+            except Exception as e:
+                print(f"[ERROR] Server error: {e}")
 
 if __name__ == "__main__":
     main()
-
-
