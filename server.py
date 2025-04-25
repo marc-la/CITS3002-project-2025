@@ -17,7 +17,6 @@ def handle_client(conn, addr, player_id, rfiles, wfiles, game_over_event):
     """
     Handles a single client connection.
     Adds the client's file-like objects to the shared lists and waits for the game to start.
-    Handles disconnections gracefully.
     """
     print(f"[INFO] Player {player_id + 1} connected from {addr}")
     try:
@@ -30,14 +29,11 @@ def handle_client(conn, addr, player_id, rfiles, wfiles, game_over_event):
             wfiles[player_id] = wfile
 
             # Notify the player to wait for the game to start
-            if wfile:
-                wfile.write("Waiting for the other player to connect...\n")
-                wfile.flush()
+            wfile.write("Waiting for the other player to connect...\n")
+            wfile.flush()
 
             # Wait until both players are connected
             while None in rfiles or None in wfiles:
-                if game_over_event.is_set():  # Exit if the game is already over
-                    return
                 pass  # Busy wait until both players are ready
 
             # Start the game once both players are connected
@@ -48,17 +44,10 @@ def handle_client(conn, addr, player_id, rfiles, wfiles, game_over_event):
                 # Signal that the game is over
                 game_over_event.set()
 
-    except (ConnectionResetError, BrokenPipeError):
-        print(f"[INFO] Player {player_id + 1} disconnected unexpectedly.")
-        rfiles[player_id] = None
-        wfiles[player_id] = None
-        game_over_event.set()  # Signal that the game is over due to disconnection
     except Exception as e:
         print(f"[ERROR] Exception while handling client {addr}: {e}")
     finally:
         print(f"[INFO] Player {player_id + 1} disconnected.")
-        rfiles[player_id] = None
-        wfiles[player_id] = None
 
 def main():
     """
