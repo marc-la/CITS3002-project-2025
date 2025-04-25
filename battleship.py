@@ -372,7 +372,7 @@ def run_two_play_game_online(rfiles, wfiles):
         wfiles[player].flush()
 
 
-    def send_board(player, player_board, other_board):
+    def send_board(player, board):
         """
         Send the player's board to them, showing:
         - Left: opponent's board view (guesses)
@@ -394,14 +394,14 @@ def run_two_play_game_online(rfiles, wfiles):
         wfiles[player].write("[YOUR GUESSES]".ljust(32) + "[YOUR BOARD]\n")
 
         # Column headers for both grids
-        col_header = ".  " + "".join(str(i + 1).ljust(2) for i in range(player_board.size))
+        col_header = ".  " + "".join(str(i + 1).ljust(2) for i in range(board.size))
         wfiles[player].write(col_header.ljust(32) + col_header + '\n')
 
         # Each row: label + guesses on left, ships on right
-        for r in range(player_board.size):
+        for r in range(board.size):
             row_label = chr(ord('A') + r)
-            guesses_row = " ".join(other_board.display_grid[r])
-            ships_row = " ".join(player_board.hidden_grid[r])
+            guesses_row = " ".join(board.display_grid[r])
+            ships_row = " ".join(board.hidden_grid[r])
             aligned_row = f"{row_label:2} {guesses_row}".ljust(32) + f"{row_label:2} {ships_row}"
             wfiles[player].write(aligned_row + '\n')
 
@@ -433,10 +433,12 @@ def run_two_play_game_online(rfiles, wfiles):
     other_player = 1
     broadcast("The game begins! Players will alternate turns firing at each other.")
 
+    print_board = True
     while True:
-        send_board(current_player, boards[current_player], boards[other_player])
-        send(current_player, "Your Turn. Enter a coordinate to fire at (e.g., B5):")
-        send(other_player, "Waiting for the other player to take their turn...")
+        if print_board:
+            send_board(current_player, boards[current_player])
+            send(current_player, "Your Turn. Enter a coordinate to fire at (e.g., B5):")
+            send(other_player, "Waiting for the other player to take their turn...")
 
         # Get the current player's move
         try:
@@ -457,11 +459,14 @@ def run_two_play_game_online(rfiles, wfiles):
                 else:
                     send(current_player, "HIT!")
                     send(other_player, "The opponent hit one of your ships!")
+                print_board = True
             elif result == 'miss':
                 send(current_player, "MISS!")
                 send(other_player, "The opponent missed!")
+                print_board = True
             elif result == 'already_shot':
                 send(current_player, "You've already fired at that location. Try again.")
+                print_board = False
                 continue  
 
             # Check if game is over

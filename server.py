@@ -13,7 +13,7 @@ from battleship import run_single_player_game_online, run_two_play_game_online
 HOST = '0.0.0.0'
 PORT = 5001
 
-def handle_client(conn, addr, player_id, rfiles, wfiles):
+def handle_client(conn, addr, player_id, rfiles, wfiles, game_over_event):
     """
     Handles a single client connection.
     Adds the client's file-like objects to the shared lists and waits for the game to start.
@@ -41,6 +41,9 @@ def handle_client(conn, addr, player_id, rfiles, wfiles):
                 print("[INFO] Both players connected. Starting the game...")
                 run_two_play_game_online(rfiles, wfiles)
 
+                # Signal that the game is over
+                game_over_event.set()
+
     except Exception as e:
         print(f"[ERROR] Exception while handling client {addr}: {e}")
     finally:
@@ -61,18 +64,21 @@ def main():
         rfiles = [None, None]
         wfiles = [None, None]
 
+        # Event to signal when the game is over
+        game_over_event = threading.Event()
+
         try:
             # Accept exactly two players
             for player_id in range(2):
                 conn, addr = s.accept()
                 client_thread = threading.Thread(
-                    target=handle_client, args=(conn, addr, player_id, rfiles, wfiles), daemon=True
+                    target=handle_client, args=(conn, addr, player_id, rfiles, wfiles, game_over_event), daemon=True
                 )
                 client_thread.start()
 
             # Wait for the game to finish
-            while None not in rfiles and None not in wfiles:
-                pass  # Busy wait until the game ends
+            game_over_event.wait()  # Block until the game is over
+            print("[INFO] Game has ended. Shutting down server.")
 
         except KeyboardInterrupt:
             print("\n[INFO] Server shutting down...")
