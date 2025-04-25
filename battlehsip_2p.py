@@ -57,7 +57,15 @@ def run_two_play_game_online(rfiles, wfiles):
 
     def recv(player):
         """Receive input from a specific player."""
-        return rfiles[player].readline().strip()
+        while True:
+            try:
+                input_line = rfiles[player].readline().strip()
+                if input_line:
+                    return input_line
+            except Exception:
+                return None
+    
+    
 
     # Initialize board
     boards = [Board(BOARD_SIZE), Board(BOARD_SIZE)]
@@ -81,23 +89,23 @@ def run_two_play_game_online(rfiles, wfiles):
             send(other_player, "Waiting for the other player to take their turn...")
 
         # Get the current player's move
-        try:
+        while True:
+
             guess = recv(current_player)
-            # FORFEIT LOGIC
-            # if guess.lower() == 'quit':
-            #     broadcast(f"Player {current_player + 1} has forfeited. Game over.")
-            #     return
+            if not guess:
+                send(current_player, "Invalid input: Empty input. Try again.")
+                continue
+
             try:
                 row, col = parse_coordinate(guess)
-                print_board = True
+                if row < 0 or row >= BOARD_SIZE or col < 0 or col >= BOARD_SIZE:
+                    raise ValueError("Coordinates out of bounds.")
             except ValueError as e:
                 send(current_player, f"Invalid input: {e}. Try again.")
-                print_board = False
-                continue  # Retry the turn
+                continue
 
             result, sunk_name = boards[other_player].fire_at(row, col)
 
-            # Process the result of the shot
             if result == 'hit':
                 if sunk_name:
                     send(current_player, f"HIT! You sank the {sunk_name}!")
@@ -105,15 +113,12 @@ def run_two_play_game_online(rfiles, wfiles):
                 else:
                     send(current_player, "HIT!")
                     send(other_player, "The opponent hit one of your ships!")
-                print_board = True
             elif result == 'miss':
                 send(current_player, "MISS!")
                 send(other_player, "The opponent missed!")
-                print_board = True
             elif result == 'already_shot':
                 send(current_player, "You've already fired at that location. Try again.")
-                print_board = False
-                continue  
+                continue
 
             # Check if game is over
             if boards[other_player].all_ships_sunk():
@@ -122,9 +127,9 @@ def run_two_play_game_online(rfiles, wfiles):
                 broadcast("Game over.")
                 return
 
-        except ValueError as e:
-            send(current_player, f"Invalid input: {e}. Try again.")
-            continue 
+            break
 
+        # Switch turns
         current_player, other_player = other_player, current_player
+
 
