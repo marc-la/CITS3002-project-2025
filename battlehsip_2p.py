@@ -1,4 +1,5 @@
 from battleship import *
+import time
 
 def run_two_play_game_online(rfiles, wfiles):
     """
@@ -55,10 +56,14 @@ def run_two_play_game_online(rfiles, wfiles):
             wfile.write(msg + '\n')
             wfile.flush()
 
-    def recv(player):
-        """Receive input from a specific player."""
+    def recv(player, timeout=30):
+        """Receive input from a specific player with a timeout."""
+        start_time = time.time()
         while True:
             try:
+                if time.time() - start_time > timeout:
+                    return None  # Timeout occurred
+
                 input_line = rfiles[player].readline().strip()
                 if input_line:
                     return input_line
@@ -80,7 +85,7 @@ def run_two_play_game_online(rfiles, wfiles):
     current_player = 0
     other_player = 1
     broadcast("The game begins! Players will alternate turns firing at each other.")
-
+    send_board(other_player, boards[other_player], boards[current_player])
     print_board = True
     while True:
         if print_board:
@@ -90,8 +95,12 @@ def run_two_play_game_online(rfiles, wfiles):
 
         # Get the current player's move
         while True:
-
             guess = recv(current_player)
+            if guess is None:
+                send(current_player, "Timeout! You took too long. Your turn is skipped.")
+                send(other_player, "The opponent took too long. It's now your turn.")
+                break  # Skip the turn
+
             if not guess:
                 send(current_player, "Invalid input: Empty input. Try again.")
                 continue
