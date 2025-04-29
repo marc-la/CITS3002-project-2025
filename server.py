@@ -9,7 +9,7 @@ Uses the two-player game logic defined in battleship.py (run_two_play_game_onlin
 
 import socket
 import threading
-from battlehsip_2p import *
+from battleship_2p import *
 
 HOST = '127.0.0.1'
 PORT = 5000
@@ -65,6 +65,7 @@ def start_game(connections, rfiles, wfiles, game_over_event):
             conn, addr = connections.pop(0)
             client_thread = threading.Thread(target=handle_client, args=(conn, addr, player_id, rfiles, wfiles, game_over_event), daemon=True)
             client_thread.start()
+            print_running_threads()
 
         game_over_event.wait()  # Block until the game is over or a client disconnects
         game_over_event.clear()  # Reset the event for the next game
@@ -78,6 +79,12 @@ def start_game(connections, rfiles, wfiles, game_over_event):
                     pass
         print("[INFO] Game has ended or a client disconnected.")
         print("[INFO] Returning to waiting for new connections...")
+
+def print_running_threads():
+    threads = threading.enumerate()
+    print(f"Number of running threads: {len(threads)}")
+    for thread in threads:
+        print(f"[INFO] Thread Name: {thread.name}, Is Daemon: {thread.daemon}, Is Alive: {thread.is_alive()}")
 
 def main():
     """Main server function to accept connections and handle clients using threads."""
@@ -111,6 +118,7 @@ def main():
                 if len(connections) >= 2:
                     game_thread = threading.Thread(target=start_game, args=(connections, rfiles, wfiles, game_over_event), daemon=True)
                     game_thread.start()
+                    print_running_threads()
 
             except KeyboardInterrupt:
                 print("\n[INFO] Server shutting down...")
