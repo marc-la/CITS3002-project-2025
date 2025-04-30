@@ -57,6 +57,7 @@ class TwoPlayerBattleshipGame:
             while True:
                 try:
                     input_line = self.rfiles[player].readline().strip()
+                    logging.debug(f"Player {player} input: {input_line}")  # Debugging log
                     if input_line == "":
                         # Check if the game is still running before marking as disconnected
                         with self.lock:

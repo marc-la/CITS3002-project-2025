@@ -49,6 +49,7 @@ class Client:
                     break
 
                 line = line.strip()
+                logging.debug(f"Received message: {line}")  # Debugging log
                 if line == "GAME_START":
                     logging.info("The game is starting!")
                     self.game_start_event.set()
