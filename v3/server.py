@@ -2,7 +2,7 @@
 
 # Imports
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
-from threading import Thread, Lock, Event, current_thread
+from threading import Thread, Event, current_thread
 from battleship_multiplayer import TwoPlayerBattleshipGame
 import logging
 
@@ -53,7 +53,6 @@ class Server:
         self.rfiles = [None, None]
         self.wfiles = [None, None]
         self.game_over_event = Event()
-        self.lock = Lock()  
         self.running = True
     
     def start(self):
@@ -83,11 +82,10 @@ class Server:
         """
         Handle a new connection, assigning it as a player or spectator.
         """
-        with self.lock:
-            if None in self.rfiles:
-                self.assign_player(conn, addr)
-            else:
-                self.assign_spectator(conn, addr)
+        if None in self.rfiles:
+            self.assign_player(conn, addr)
+        else:
+            self.assign_spectator(conn, addr)
 
     def assign_player(self, conn, addr):
         """
@@ -103,7 +101,6 @@ class Server:
             logging.info("Both players connected. Starting the game...")
             self.broadcast_to_spectators("[INFO] The game is starting (spectate view)...\n")
             self.start_game()
-            self.game_over_event.set()
 
     def assign_spectator(self, conn, addr):
         """
@@ -134,23 +131,19 @@ class Server:
         except Exception as e:
             logging.error(f"Error with spectator {addr}: {e}")
         finally:
-            with self.lock:
-                if conn in self.spectators:
-                    self.spectators.remove(conn)
-                if conn in self.spectator_threads:
-                    del self.spectator_threads[conn]
+            self.spectators.remove(conn)
+            del self.spectator_threads[conn]
         
     def broadcast_to_spectators(self, message):
         """
         Broadcast a message to all spectators.
         """
-        with self.lock:
-            # Iterate over a copy
-            for spectator in self.spectators[:]:
-                try:
-                    spectator.sendall(message.encode('utf-8'))
-                except Exception:
-                    self.spectators.remove(spectator)
+        # Iterate over a copy
+        for spectator in self.spectators[:]:
+            try:
+                spectator.sendall(message.encode('utf-8'))
+            except Exception:
+                self.spectators.remove(spectator)
     
     def start_game(self):
         """
