@@ -3,7 +3,7 @@
 # Imports
 import logging
 from queue import Queue, Empty
-from threading import Thread, Lock
+from threading import Thread, Lock, current_thread
 from battleship import *
 
 # Constants
@@ -25,11 +25,12 @@ class TwoPlayerBattleshipGame:
         rfiles (list): File-like objects for reading input from players.
         wfiles (list): File-like objects for writing output to players.
         spectators (list): File-like objects for broadcasting messages to spectators.
-        TIMEOUT_SECONDS (int): The time limit for each player's turn in seconds.
-        input_queues (list): Queues for storing player inputs.
+        player_inputs (list): Queues for storing player inputs.
         boards (list): The game boards for each player.
         current_player (int): The index of the player whose turn it is.
         other_player (int): The index of the opponent player.
+        lock (Lock): Ensure thread-safe access
+        disconnected (list): Track disconnection status for each player.
     """
 
     def __init__(self, rfiles, wfiles, spectators):
@@ -45,27 +46,31 @@ class TwoPlayerBattleshipGame:
         self.other_player = 1
         self.listener_threads = []
         self.lock = Lock()
+        self.disconnected = [False, False]
 
     def input_listener(self, player):
         """
         Thread function to continuously read inputs from a player.
         Handles disconnections and pushes valid inputs to the player's queue.
         """
-        while True:
-            try:
-                input_line = self.rfiles[player].readline().strip()
-                if not input_line:
-                    # Handle disconnection
-                    logging.info(f"Player {player} disconnected.")
+        try:
+            while True:
+                try:
+                    input_line = self.rfiles[player].readline().strip()
+                    if not input_line:
+                        # Handle disconnection
+                        logging.info(f"Player {player} disconnected.")
+                        self.handle_disconnection()
+                        break
+                    
+                    # Push input into the queue
+                    self.player_inputs[player].put(input_line)  
+                except Exception as e:
+                    logging.error(f"Error receiving input from player {player}: {e}")
                     self.handle_disconnection()
                     break
-                
-                # Push input into the queue
-                self.player_inputs[player].put(input_line)  
-            except Exception as e:
-                logging.error(f"Error receiving input from player {player}: {e}")
-                self.handle_disconnection()
-                break
+        except Exception as e:
+            logging.error(f"Unexpected error in input listener for player {player}: {e}")
 
     def send(self, player, msg):
         """
@@ -242,6 +247,11 @@ class TwoPlayerBattleshipGame:
         """
         Handle player disconnection.
         """
+        if self.disconnected[self.current_player]:
+            # Avoid handling disconnection multiple times
+            return  
+        self.disconnected[self.current_player] = True
+
         logging.info("Handling player disconnection...")
         self.send(self.current_player, "You disconnected or timed out. You forfeit the game.")
         self.send(self.other_player, "The opponent disconnected or timed out. You win!")
@@ -270,11 +280,14 @@ class TwoPlayerBattleshipGame:
         Clean up resources and terminate threads.
         """
         logging.info("Cleaning up resources...")
-        for thread in self.listener_threads:
-            thread.join(timeout=1)
+        with self.lock: 
+            for thread in self.listener_threads:
+                if thread is not current_thread():
+                    thread.join(timeout=1)
         for wfile in self.wfiles + self.spectators:
             try:
-                wfile.close()
+                if not isinstance(wfile, StringIO):
+                    wfile.close()
             except Exception as e:
                 logging.error(f"Error closing file: {e}")
 
