@@ -57,14 +57,16 @@ class TwoPlayerBattleshipGame:
             while True:
                 try:
                     input_line = self.rfiles[player].readline().strip()
-                    if not input_line:
-                        # Handle disconnection
-                        logging.info(f"Player {player} disconnected.")
-                        self.handle_disconnection()
+                    if input_line == "":
+                        # Check if the game is still running before marking as disconnected
+                        with self.lock:
+                            if not self.disconnected[player]:
+                                logging.info(f"Player {player} disconnected.")
+                                self.handle_disconnection()
                         break
-                    
+
                     # Push input into the queue
-                    self.player_inputs[player].put(input_line)  
+                    self.player_inputs[player].put(input_line)
                 except Exception as e:
                     logging.error(f"Error receiving input from player {player}: {e}")
                     self.handle_disconnection()
