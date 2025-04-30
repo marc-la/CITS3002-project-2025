@@ -10,7 +10,7 @@ from battleship import *
 TIMEOUT_SECONDS = 30
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='[GAME][%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
 class TwoPlayerBattleshipGame:
     """
@@ -171,6 +171,10 @@ class TwoPlayerBattleshipGame:
         """
         while True:
             try:
+                if self.disconnected[self.current_player]:
+                    logging.info(f"Player {self.current_player} disconnected. Ending game.")
+                    break
+
                 self.send_board(self.current_player, self.boards[self.current_player], self.boards[self.other_player])
                 self.send(self.current_player, f"Your Turn. Enter a coordinate to fire at (e.g., B5). You have {TIMEOUT_SECONDS} seconds:")
                 self.send(self.other_player, "Waiting for the other player to take their turn...")

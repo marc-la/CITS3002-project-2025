@@ -8,7 +8,7 @@ from threading import Event, Thread
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='[CLIENT][%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
 # Global variables (edit here to change)
 HOST = '127.0.0.1'
@@ -47,29 +47,9 @@ class Client:
                     logging.info("Server disconnected.")
                     self.stop_input_event.set()
                     break
-
-                line = line.strip()
-                logging.debug(f"Received message: {line}")  # Debugging log
-                if line == "GAME_START":
-                    logging.info("The game is starting!")
-                    self.game_start_event.set()
-                elif line == "GRID":
-                    # Read and display the board grid
-                    print("\n[Board]")
-                    while True:
-                        board_line = rfile.readline()
-                        if not board_line or board_line.strip() == "":
-                            break
-                        print(board_line.strip())
-                elif "Time's up!" in line:
-                    print(line)
-                    self.stop_input_event.set()
-                else:
-                    print(line)
         except Exception as e:
             logging.error(f"Error receiving messages: {e}")
             self.stop_input_event.set()
-            raise
 
     def input_loop(self, wfile):
         """
@@ -100,6 +80,7 @@ class Client:
         """
         Connect to the server and start the client.
         """
+        receiver_thread = None
         with socket(AF_INET, SOCK_STREAM) as s:
             try:
                 s.connect((self.host, self.port))
@@ -113,11 +94,16 @@ class Client:
                 # Start the input loop
                 self.input_loop(wfile)
 
-                # Wait for the receiver thread to finish
-                receiver_thread.join()
             except Exception as e:
                 logging.error(f"An error occurred: {e}")
                 self.stop_input_event.set()
+                
+            finally:
+                # Ensure the receiver thread terminates
+                self.stop_input_event.set()
+                if receiver_thread is not None:
+                    receiver_thread.join(timeout=1)
+                logging.info("Client shutdown complete.")           
 
 
 if __name__ == "__main__":
