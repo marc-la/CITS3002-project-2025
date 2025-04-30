@@ -41,30 +41,27 @@ class Client:
         Continuously receive and display messages from the server.
         """
         try:
-            while not self.stop_input_event.is_set():
+            while True:
                 line = rfile.readline()
                 if not line:
                     logging.info("Server disconnected.")
                     self.stop_input_event.set()
                     break
-                
-            line = line.strip()
-            if line == "GAME_START":
-                print("[INFO] The game is starting!")
 
-                # Signal that the game has started
-                self.game_start_event.set()  
-            elif line == "GRID":
-                # Read and display the board grid
-                print("\n[Board]")
-                while True:
-                    board_line = rfile.readline()
-                    if not board_line or board_line.strip() == "":
-                        break
-                    print(board_line.strip())
-            else:
-                print(line)    
-
+                line = line.strip()
+                if line == "GAME_START":
+                    print("[INFO] The game is starting!")
+                    self.game_start_event.set()
+                elif line == "GRID":
+                    # Read and display the board grid
+                    print("\n[Board]")
+                    while True:
+                        board_line = rfile.readline()
+                        if not board_line or board_line.strip() == "":
+                            break
+                        print(board_line.strip())
+                else:
+                    print(line)
         except Exception as e:
             logging.error(f"Error receiving messages: {e}")
             self.stop_input_event.set()
@@ -75,15 +72,12 @@ class Client:
         """
         try:
             while not self.stop_input_event.is_set():
-                # Prompt for input
                 print(">> ", end="", flush=True)
                 if not self.game_start_event.is_set():
-                    # Wait for input or timeout
-                    ready = select([stdin], [], [])[0]
+                    ready, _, _ = select([stdin], [], [])
                 else:
-                    ready = select([stdin], [], [], INPUT_TIMEOUT)[0]
+                    ready, _, _ = select([stdin], [], [], INPUT_TIMEOUT)
 
-                # If input is ready
                 if ready:
                     user_input = stdin.readline().strip()
                     if user_input.lower() == 'quit':
@@ -114,7 +108,7 @@ class Client:
                 receiver_thread.start()
 
                 # DO NOT REMOVE
-                Event().wait(0.1)  
+                Event().wait(0.1)
 
                 # Start the input loop
                 self.input_loop(wfile)
@@ -122,7 +116,7 @@ class Client:
             except Exception as e:
                 logging.error(f"An error occurred: {e}")
                 self.stop_input_event.set()
-                
+
             finally:
                 # Ensure the receiver thread terminates
                 self.stop_input_event.set()
