@@ -81,7 +81,7 @@ class Client:
                     # Wait for input or timeout
                     ready = select([stdin], [], [])[0]
                 else:
-                    ready = select([stdin], [], [], INPUT_TIMEOUT)
+                    ready = select([stdin], [], [], INPUT_TIMEOUT)[0]
 
                 # If input is ready
                 if ready:
