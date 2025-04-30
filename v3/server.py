@@ -9,7 +9,7 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
-# Global Variables
+# Global Variables (edit here to change)
 HOST = "127.0.0.1"
 PORT = 5000
 
