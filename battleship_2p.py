@@ -1,8 +1,7 @@
-import queue
-import threading
 from battleship import Board, parse_coordinate, BOARD_SIZE, SHIPS
+import select, sys, queue, threading
 
-def run_two_play_game_online(rfiles, wfiles, spectators):
+def run_two_play_game_online(rfiles, wfiles, spectators, game_over_event):
     """
     Runs a two-player Battleship game.
     Expects:
@@ -16,18 +15,17 @@ def run_two_play_game_online(rfiles, wfiles, spectators):
 
     def input_listener(player, input_queue):
         """Thread function to continuously read inputs from a player."""
-        try:
-            while True:
+        while True: 
+            ready, _, _ = select.select([rfiles[player]], [], [], 30)
+            if ready:  # If input is ready
                 input_line = rfiles[player].readline().strip()
-                if not input_line:
-                    # Handle disconnection
-                    print(f"[INFO] Player {player} disconnected.")
-                    input_queue.put(None)  # Signal disconnection
-                    break
-                input_queue.put(input_line)  # Push input into the queue
-        except Exception as e:
-            print(f"[ERROR] Error receiving input from player {player}: {e}")
-            input_queue.put(None)  # Signal disconnection
+            if not input_line:
+                # Handle disconnection
+                print(f"[INFO] Player {player} disconnected.")
+                game_over_event.set()  # Signal that the game is over
+                input_queue.put(None)  # Signal disconnection
+                break
+            input_queue.put(input_line)  # Push input into the queue
 
     def send(player, msg):
         """Send a message to a specific player."""
@@ -54,12 +52,6 @@ def run_two_play_game_online(rfiles, wfiles, spectators):
             wfile.write(msg + '\n')
             wfile.flush()
 
-    def broadcast_spectators(msg):
-        """Send a message to all spectators."""
-        for spectator in spectators:
-            spectator.write(msg + '\n')
-            spectator.flush()
-
     # Start input listener threads for both players
     listener_threads = []
     for player in range(2):
@@ -81,6 +73,8 @@ def run_two_play_game_online(rfiles, wfiles, spectators):
     send_board(other_player, boards[other_player], boards[current_player])
 
     while True:
+        if game_over_event.is_set():
+            break
         send_board(current_player, boards[current_player], boards[other_player])
         send(current_player, f"Your Turn. Enter a coordinate to fire at (e.g., B5). You have {TIMEOUT_SECONDS} seconds:")
         send(other_player, "Waiting for the other player to take their turn...")
@@ -90,8 +84,6 @@ def run_two_play_game_online(rfiles, wfiles, spectators):
             guess = input_queues[current_player].get(timeout=TIMEOUT_SECONDS)
             if guess is None:
                 send(current_player, "You disconnected or timed out. You forfeit the game.")
-                send(other_player, "The opponent disconnected or timed out. You win!")
-                broadcast_players("Game over.")
                 return
         except queue.Empty:
             send(current_player, "Timeout! You took too long. Your turn is skipped.")
@@ -127,7 +119,7 @@ def run_two_play_game_online(rfiles, wfiles, spectators):
         if boards[other_player].all_ships_sunk():
             send(current_player, "Congratulations! You sank all the opponent's ships. You win!")
             send(other_player, "All your ships have been sunk. You lose!")
-            broadcast("Game over.")
+            broadcast_players("Game over.")
             return
 
         # Switch turns

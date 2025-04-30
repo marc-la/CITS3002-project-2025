@@ -15,7 +15,9 @@ import threading
 HOST = '127.0.0.1'
 PORT = 5000
 
-game_start_event = threading.Event()  # Event to signal when the game starts
+game_over_event = threading.Event()  # Event to signal when the game starts
+is_spectator_event = threading.Event()  # Event to signal when the game is over
+is_spectator_event.set()
 
 def receive_messages(rfile):
     """Continuously receive and display messages from the server."""
@@ -25,11 +27,14 @@ def receive_messages(rfile):
             if not line:
                 print("[INFO] Server disconnected.")
                 break
+            if game_over_event.is_set():
+                print("[INFO] The game is over.")
+                break
 
             line = line.strip()
             if line == "GAME_START":
+                is_spectator_event.clear()  # Clear the spectator event
                 print("[INFO] The game is starting!")
-                game_start_event.set()  # Signal that the game has started
             elif line == "GRID":
                 # Read and display the board grid
                 print("\n[Board]")
@@ -39,8 +44,7 @@ def receive_messages(rfile):
                         break
                     print(board_line.strip())
             elif line == "DISCONNECT":
-                print("[INFO] Your opponent disconnected, you win!")
-                game_start_event.set()  # Signal that the game is over
+                game_over_event.set()  # Signal that the game is over
                 break
             else:
                 print(line)
@@ -51,13 +55,16 @@ def input_loop(wfile):
     """Handles user input and sends it to the server."""
     try:
         while True:
-            if not game_start_event.is_set():
+            if game_over_event.is_set():
+                print("[INFO] The game is over.")
+                break
+            if is_spectator_event.is_set():
                 ready, _, _ = select.select([sys.stdin], [], [])  # Wait for input or timeout
             else:   
                 ready, _, _ = select.select([sys.stdin], [], [], 30)
             if ready:  # If input is ready
                 user_input = sys.stdin.readline().strip()
-                if user_input.lower() == 'quit':
+                if user_input.lower() == 'quit' or game_over_event.is_set():
                     print("[INFO] Exiting...")
                     break
                 wfile.write(user_input + '\n')
