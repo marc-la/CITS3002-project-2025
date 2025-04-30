@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 
 # Imports
+import logging
 from queue import Queue, Empty
 from threading import Thread, Lock
 from battleship import *
 
 # Constants
 TIMEOUT_SECONDS = 30
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
 class TwoPlayerBattleshipGame:
     """
@@ -38,7 +42,7 @@ class TwoPlayerBattleshipGame:
         self.player_inputs = [Queue(), Queue()]
         self.boards = [Board(BOARD_SIZE), Board(BOARD_SIZE)]
         self.current_player = 0
-        self.other_player = 0
+        self.other_player = 1
         self.listener_threads = []
         self.lock = Lock()
 
@@ -52,14 +56,14 @@ class TwoPlayerBattleshipGame:
                 input_line = self.rfiles[player].readline().strip()
                 if not input_line:
                     # Handle disconnection
-                    print(f"[INFO] Player {player} disconnected.")
+                    logging.info(f"Player {player} disconnected.")
                     self.handle_disconnection()
                     break
                 
                 # Push input into the queue
                 self.player_inputs[player].put(input_line)  
             except Exception as e:
-                print(f"[ERROR] Error receiving input from player {player}: {e}")
+                logging.error(f"Error receiving input from player {player}: {e}")
                 self.handle_disconnection()
                 break
 
@@ -71,7 +75,7 @@ class TwoPlayerBattleshipGame:
             self.wfiles[player].write(msg + '\n')
             self.wfiles[player].flush()
         except Exception as e:
-            print(f"[ERROR] Failed to send message to player {player}: {e}")
+            logging.error(f"Failed to send message to player {player}: {e}")
 
     def broadcast_players(self, msg):
         """
@@ -82,7 +86,7 @@ class TwoPlayerBattleshipGame:
                 wfile.write(msg + '\n')
                 wfile.flush()
             except Exception as e:
-                print(f"[ERROR] Failed to broadcast message to a player: {e}")
+                logging.error(f"Failed to broadcast message to a player: {e}")
 
     def broadcast_spectators(self, msg):
         """
@@ -93,7 +97,7 @@ class TwoPlayerBattleshipGame:
                 spectator.write(msg + '\n')
                 spectator.flush()
             except Exception as e:
-                print(f"[ERROR] Failed to broadcast message to a spectator: {e}")
+                logging.error(f"Failed to broadcast message to a spectator: {e}")
 
     def send_board(self, player, player_board, other_board):
         """
@@ -117,7 +121,7 @@ class TwoPlayerBattleshipGame:
             self.wfiles[player].write('\n')
             self.wfiles[player].flush()
         except Exception as e:
-            print(f"[ERROR] Failed to send board to player {player}: {e}")
+            logging.error(f"Failed to send board to player {player}: {e}")
 
     def start_input_listeners(self):
         """
@@ -149,7 +153,7 @@ class TwoPlayerBattleshipGame:
             self.broadcast_players("The game begins! Players will alternate turns firing at each other.")
             self.play_game()
         except Exception as e:
-            print(f"[ERROR] Unexpected error during game: {e}")
+            logging.error(f"Unexpected error during game: {e}")
         finally:
             self.cleanup()
 
@@ -175,7 +179,7 @@ class TwoPlayerBattleshipGame:
 
                 self.switch_turns()
             except Exception as e:
-                print(f"[ERROR] Error in game loop: {e}")
+                logging.error(f"Error in game loop: {e}")
                 break
     
     def get_player_guess(self):
@@ -186,7 +190,7 @@ class TwoPlayerBattleshipGame:
             guess = self.player_inputs[self.current_player].get(timeout=TIMEOUT_SECONDS)
             return guess
         except Empty:
-            print(f"[INFO] Player {self.current_player} timed out.")
+            logging.info(f"Player {self.current_player} timed out.")
             self.handle_timeout()
             return None
 
@@ -238,6 +242,7 @@ class TwoPlayerBattleshipGame:
         """
         Handle player disconnection.
         """
+        logging.info("Handling player disconnection...")
         self.send(self.current_player, "You disconnected or timed out. You forfeit the game.")
         self.send(self.other_player, "The opponent disconnected or timed out. You win!")
         self.broadcast_players("Game over due to disconnection.")
@@ -248,6 +253,7 @@ class TwoPlayerBattleshipGame:
         Handle player timeout.
         """
         with self.lock:
+            logging.info(f"Player {self.current_player} timed out.")
             self.send(self.current_player, "Timeout! You took too long. Your turn is skipped.")
             self.send(self.other_player, "The opponent took too long. It's now your turn.")
             self.broadcast_players(f"Player {self.current_player} timed out.")
@@ -263,14 +269,14 @@ class TwoPlayerBattleshipGame:
         """
         Clean up resources and terminate threads.
         """
-        print(f"[INFO] Cleaning up resources...")
+        logging.info("Cleaning up resources...")
         for thread in self.listener_threads:
             thread.join(timeout=1)
         for wfile in self.wfiles + self.spectators:
             try:
                 wfile.close()
             except Exception as e:
-                print(f"[ERROR] Error closing file: {e}")
+                logging.error(f"Error closing file: {e}")
 
 
 # TEST: __main__ block updated to include edge case testing
