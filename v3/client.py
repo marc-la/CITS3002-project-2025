@@ -13,6 +13,7 @@ logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 # Global variables (edit here to change)
 HOST = '127.0.0.1'
 PORT = 5000
+INPUT_TIMEOUT = 30
 
 class Client:
     """
@@ -40,7 +41,7 @@ class Client:
         Continuously receive and display messages from the server.
         """
         try:
-            while True:
+            while not self.stop_input_event.is_set():
                 line = rfile.readline()
                 if not line:
                     logging.info("Server disconnected.")
@@ -67,6 +68,7 @@ class Client:
         except Exception as e:
             logging.error(f"Error receiving messages: {e}")
             self.stop_input_event.set()
+            raise
 
     def input_loop(self, wfile):
         """
@@ -75,21 +77,21 @@ class Client:
         try:
             while not self.stop_input_event.is_set():
                 print(">> ", end="", flush=True)
-                if not self.game_start_event.is_set():
-                    ready, _, _ = select([stdin], [], [])
-                else:
-                    ready, _, _ = select([stdin], [], [], 30)
+                timeout = None if not self.game_start_event.is_set() else INPUT_TIMEOUT
+                ready, _, _ = select([stdin], [], [], timeout)
                 if self.stop_input_event.is_set():
                     break
                 if ready:
                     user_input = stdin.readline().strip()
                     if user_input.lower() == 'quit':
                         logging.info("Exiting...")
+                        self.stop_input_event.set()
                         break
                     wfile.write(user_input + '\n')
                     wfile.flush()
         except KeyboardInterrupt:
-            logging.info("Client exiting.")
+            logging.info("Client exiting due to keyboard interrupt.")
+            self.stop_input_event.set()
         finally:
             wfile.close()
 
@@ -98,16 +100,23 @@ class Client:
         Connect to the server and start the client.
         """
         with socket(AF_INET, SOCK_STREAM) as s:
-            s.connect((self.host, self.port))
-            rfile = s.makefile('r')
-            wfile = s.makefile('w')
+            try:
+                s.connect((self.host, self.port))
+                rfile = s.makefile('r')
+                wfile = s.makefile('w')
 
-            # Start a background thread for receiving messages
-            receiver_thread = Thread(target=self.receive_messages, args=(rfile,), daemon=True)
-            receiver_thread.start()
+                # Start a background thread for receiving messages
+                receiver_thread = Thread(target=self.receive_messages, args=(rfile,), daemon=True)
+                receiver_thread.start()
 
-            # Start the input loop
-            self.input_loop(wfile)
+                # Start the input loop
+                self.input_loop(wfile)
+
+                # Wait for the receiver thread to finish
+                receiver_thread.join()
+            except Exception as e:
+                logging.error(f"An error occurred: {e}")
+                self.stop_input_event.set()
 
 
 if __name__ == "__main__":
