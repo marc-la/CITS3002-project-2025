@@ -2,7 +2,7 @@
 
 # Imports
 from queue import Queue, Empty
-from threading import Thread
+from threading import Thread, Lock
 from battleship import *
 
 # Constants
@@ -40,6 +40,7 @@ class TwoPlayerBattleshipGame:
         self.current_player = 0
         self.other_player = 0
         self.listener_threads = []
+        self.lock = Lock()
 
     def input_listener(self, player):
         """
@@ -52,12 +53,14 @@ class TwoPlayerBattleshipGame:
                 if not input_line:
                     # Handle disconnection
                     print(f"[INFO] Player {player} disconnected.")
+                    self.handle_disconnection()
                     break
                 
                 # Push input into the queue
                 self.player_inputs[player].put(input_line)  
             except Exception as e:
                 print(f"[ERROR] Error receiving input from player {player}: {e}")
+                self.handle_disconnection()
                 break
 
     def send(self, player, msg):
@@ -140,31 +143,40 @@ class TwoPlayerBattleshipGame:
         """
         Main function to start and run the game.
         """
-        self.start_input_listeners()
-        self.initialise_boards()
-        self.broadcast_players("The game begins! Players will alternate turns firing at each other.")
-        self.play_game()
+        try:
+            self.start_input_listeners()
+            self.initialise_boards()
+            self.broadcast_players("The game begins! Players will alternate turns firing at each other.")
+            self.play_game()
+        except Exception as e:
+            print(f"[ERROR] Unexpected error during game: {e}")
+        finally:
+            self.cleanup()
 
     def play_game(self):
         """
         Handle the main gameplay loop.
         """
         while True:
-            self.send_board(self.current_player, self.boards[self.current_player], self.boards[self.other_player])
-            self.send(self.current_player, f"Your Turn. Enter a coordinate to fire at (e.g., B5). You have {TIMEOUT_SECONDS} seconds:")
-            self.send(self.other_player, "Waiting for the other player to take their turn...")
+            try:
+                self.send_board(self.current_player, self.boards[self.current_player], self.boards[self.other_player])
+                self.send(self.current_player, f"Your Turn. Enter a coordinate to fire at (e.g., B5). You have {TIMEOUT_SECONDS} seconds:")
+                self.send(self.other_player, "Waiting for the other player to take their turn...")
 
-            guess = self.get_player_guess()
-            if guess is None:
-                return
+                guess = self.get_player_guess()
+                if guess is None:
+                    return
 
-            if not self.process_guess(guess):
-                continue
+                if not self.process_guess(guess):
+                    continue
 
-            if self.check_game_over():
-                return
+                if self.check_game_over():
+                    return
 
-            self.switch_turns()
+                self.switch_turns()
+            except Exception as e:
+                print(f"[ERROR] Error in game loop: {e}")
+                break
     
     def get_player_guess(self):
         """
@@ -172,12 +184,9 @@ class TwoPlayerBattleshipGame:
         """
         try:
             guess = self.player_inputs[self.current_player].get(timeout=TIMEOUT_SECONDS)
-            if guess is None:
-                self.handle_disconnection()
-                return None
             return guess
         except Empty:
-            print(f"[INFO] Player {self.current_player} input queue is empty.")
+            print(f"[INFO] Player {self.current_player} timed out.")
             self.handle_timeout()
             return None
 
@@ -231,15 +240,18 @@ class TwoPlayerBattleshipGame:
         """
         self.send(self.current_player, "You disconnected or timed out. You forfeit the game.")
         self.send(self.other_player, "The opponent disconnected or timed out. You win!")
-        self.broadcast_players("Game over.")
+        self.broadcast_players("Game over due to disconnection.")
+        self.cleanup()
 
     def handle_timeout(self):
         """
         Handle player timeout.
         """
-        self.send(self.current_player, "Timeout! You took too long. Your turn is skipped.")
-        self.send(self.other_player, "The opponent took too long. It's now your turn.")
-        self.switch_turns()
+        with self.lock:
+            self.send(self.current_player, "Timeout! You took too long. Your turn is skipped.")
+            self.send(self.other_player, "The opponent took too long. It's now your turn.")
+            self.broadcast_players(f"Player {self.current_player} timed out.")
+            self.switch_turns()
 
     def switch_turns(self):
         """
@@ -247,36 +259,42 @@ class TwoPlayerBattleshipGame:
         """
         self.current_player, self.other_player = self.other_player, self.current_player
 
+    def cleanup(self):
+        """
+        Clean up resources and terminate threads.
+        """
+        print(f"[INFO] Cleaning up resources...")
+        for thread in self.listener_threads:
+            thread.join(timeout=1)
+        for wfile in self.wfiles + self.spectators:
+            try:
+                wfile.close()
+            except Exception as e:
+                print(f"[ERROR] Error closing file: {e}")
 
-# TEST: __main__ block added to test logic of TwoPlayerBattleshipGame
+
+# TEST: __main__ block updated to include edge case testing
 if __name__ == "__main__":
-    import sys
     from io import StringIO
 
     # Simulate player input/output using StringIO
-    player1_input = StringIO("A1\nB2\nC3\n")  # Example inputs for Player 1
-    player2_input = StringIO("D4\nE5\nF6\n")  # Example inputs for Player 2
+    player1_input = StringIO("A1\nB2\nINVALID\nC3\n")  # Includes invalid input
+    player2_input = StringIO("D4\nE5\nF6\n")
     player1_output = StringIO()
     player2_output = StringIO()
-
-    # Spectator output (optional)
     spectator_output = StringIO()
 
-    # Create file-like objects for players and spectators
     rfiles = [player1_input, player2_input]
     wfiles = [player1_output, player2_output]
     spectators = [spectator_output]
 
-    # Initialize the game
     game = TwoPlayerBattleshipGame(rfiles, wfiles, spectators)
 
-    # Start the game
     try:
         game.start_game()
     except KeyboardInterrupt:
-        print("Game interrupted.")
+        logging.info("Game interrupted.")
 
-    # Print outputs for debugging
     print("Player 1 Output:")
     print(player1_output.getvalue())
     print("Player 2 Output:")
