@@ -47,6 +47,24 @@ class Client:
                     logging.info("Server disconnected.")
                     self.stop_input_event.set()
                     break
+                
+            line = line.strip()
+            if line == "GAME_START":
+                print("[INFO] The game is starting!")
+
+                # Signal that the game has started
+                self.game_start_event.set()  
+            elif line == "GRID":
+                # Read and display the board grid
+                print("\n[Board]")
+                while True:
+                    board_line = rfile.readline()
+                    if not board_line or board_line.strip() == "":
+                        break
+                    print(board_line.strip())
+            else:
+                print(line)    
+
         except Exception as e:
             logging.error(f"Error receiving messages: {e}")
             self.stop_input_event.set()
@@ -57,11 +75,15 @@ class Client:
         """
         try:
             while not self.stop_input_event.is_set():
+                # Prompt for input
                 print(">> ", end="", flush=True)
-                timeout = None if not self.game_start_event.is_set() else INPUT_TIMEOUT
-                ready, _, _ = select([stdin], [], [], timeout)
-                if self.stop_input_event.is_set():
-                    break
+                if not self.game_start_event.is_set():
+                    # Wait for input or timeout
+                    ready = select([stdin], [], [])[0]
+                else:
+                    ready = select([stdin], [], [], INPUT_TIMEOUT)
+
+                # If input is ready
                 if ready:
                     user_input = stdin.readline().strip()
                     if user_input.lower() == 'quit':
@@ -90,6 +112,9 @@ class Client:
                 # Start a background thread for receiving messages
                 receiver_thread = Thread(target=self.receive_messages, args=(rfile,), daemon=True)
                 receiver_thread.start()
+
+                # DO NOT REMOVE
+                Event().wait(0.1)  
 
                 # Start the input loop
                 self.input_loop(wfile)
