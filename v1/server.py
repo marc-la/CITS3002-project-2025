@@ -9,7 +9,7 @@ Uses the two-player game logic defined in battleship.py (run_two_play_game_onlin
 
 import socket
 import threading
-from battleship_2p import *
+from v2.battleship_2p import *
 
 HOST = '127.0.0.1'
 PORT = 5000
