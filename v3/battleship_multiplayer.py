@@ -4,7 +4,7 @@
 import logging
 from queue import Queue, Empty
 from threading import Thread, Lock, current_thread
-from v1.battleship import *
+from battleship import *
 
 # Constants
 TIMEOUT_SECONDS = 30
