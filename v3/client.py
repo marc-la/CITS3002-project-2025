@@ -8,7 +8,7 @@ from threading import Event, Thread
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format='[CLIENT][%(levelname)s] %(message)s')
 
 # Global variables (edit here to change)
 HOST = '127.0.0.1'

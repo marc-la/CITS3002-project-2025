@@ -7,7 +7,7 @@ from battleship_multiplayer import TwoPlayerBattleshipGame
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format='[SERVER][%(levelname)s] %(message)s')
 
 # Global Variables (edit here to change)
 HOST = "127.0.0.1"

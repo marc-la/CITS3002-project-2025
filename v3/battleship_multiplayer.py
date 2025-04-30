@@ -10,7 +10,7 @@ from v1.battleship import *
 TIMEOUT_SECONDS = 30
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format='[GAME][%(levelname)s] %(message)s')
 
 class TwoPlayerBattleshipGame:
     """
