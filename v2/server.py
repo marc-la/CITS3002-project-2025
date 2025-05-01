@@ -30,22 +30,29 @@ def handle_spectator(conn, addr):
             wfile = conn.makefile('w')
 
             # Notify the spectator
-            wfile.write("[INFO] You are now spectating the game. Type 'quit' to leave.\n")
+            wfile.write("[INFO] You have joined the waiting lobby. Type 'quit' to leave.\n")
             wfile.flush()
 
             while True:
                 line = rfile.readline().strip()
                 if not line or line.lower() == "quit":
                     print(f"[INFO] Spectator {addr} disconnected.")
+                    if conn in spectators:
+                        spectators.remove(conn)
+                    if conn in connections:
+                        connections.remove(conn)
                     break
     except Exception as e:
         print(f"[ERROR] Error with spectator {addr}: {e}")
     finally:
-        # Remove the spectator from the list and terminate their thread
-        spectators.remove(conn)
-        del spectator_threads[conn]
-        conn.close()
-
+        # Clean up the rfile and wfile for the spectator
+        try:
+            if 'rfile' in locals():
+                rfile.close()
+            if 'wfile' in locals():
+                wfile.close()
+        except Exception as cleanup_error:
+            print(f"[ERROR] Error during cleanup for spectator {addr}: {cleanup_error}")
 
 def promote_spectators_to_players(rfiles, wfiles):
     """Promotes the first two spectators to players."""
@@ -53,19 +60,35 @@ def promote_spectators_to_players(rfiles, wfiles):
     for player_id in range(2):
         if spectators:
             conn = spectators.pop(0)  # Get the first spectator
-            spectator_threads[conn].join()  # Wait for their thread to terminate
+            spectator_threads[conn].join()  # Wait for their spectator thread to terminate
             del spectator_threads[conn]  # Remove from the thread map
 
-            # Update rfiles and wfiles for the new players
-            rfiles[player_id] = conn.makefile('r')
-            wfiles[player_id] = conn.makefile('w')
-            wfiles[player_id].write("[INFO] You are now a player in the game.\n")
-            wfiles[player_id].flush()
+            try:
+                rfile = conn.makefile('r')
+                wfile = conn.makefile('w')
+
+                # Notify the spectator and wait for confirmation
+                wfile.write("[INFO] You are being promoted to a player. Type 'ready' to confirm.\n")
+                wfile.flush()
+
+                confirmation = rfile.readline().strip()
+                if confirmation.lower() == "ready":
+                    print(f"[INFO] Spectator confirmed promotion to player: {conn.getpeername()}")
+                    # Update rfiles and wfiles for the new player
+                    rfiles[player_id] = rfile
+                    wfiles[player_id] = wfile
+                    wfile.write("[INFO] You are now a player in the game. Get ready to play!\n")
+                    wfile.flush()
+                else:
+                    print(f"[WARNING] Spectator did not confirm promotion: {conn.getpeername()}")
+                    spectators.append(conn)  # Add back to spectators if not confirmed
+            except Exception as e:
+                print(f"[ERROR] Error promoting spectator to player: {e}")
+                spectators.append(conn)  # Add back to spectators if an error occurs
         else:
             print("[WARNING] Not enough spectators to start a new game.")
             return False  # Not enough spectators to start a new game
     return True
-
 
 def broadcast_to_spectators(message):
     """Broadcasts a message to all spectators."""
@@ -79,6 +102,7 @@ def broadcast_to_spectators(message):
 
 def main():
     """Main server function to accept connections and handle clients."""
+    global connections  # Declare connections as global to modify the global list
     print(f"[INFO] Server listening on {HOST}:{PORT}")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -92,47 +116,54 @@ def main():
 
         while True:
             try:
+                # Accept a new connection
                 conn, addr = s.accept()
                 print(f"[INFO] Accepted connection from {addr}")
                 connections.append(conn)
 
-                # If there are fewer than 2 players, assign them as players
-                if None in rfiles:
-                    player_id = rfiles.index(None)
-                    rfiles[player_id] = conn.makefile('r')
-                    wfiles[player_id] = conn.makefile('w')
-                    wfiles[player_id].write("[INFO] You are now a player in the game.\n")
-                    wfiles[player_id].flush()
+                # Add the new connection as a spectator
+                spectators.append(conn)
+                spectator_thread = threading.Thread(target=handle_spectator, args=(conn, addr), daemon=True)
+                spectator_thread.start()
+                spectator_threads[conn] = spectator_thread
 
-                    # Start the game if both players are connected
-                    if None not in rfiles:
-                        print("[INFO] Both players connected. Starting the game...")
-                        broadcast_to_spectators("[INFO] The game is starting (spectate view)...\n")
+                # Check if we can start a new game
+                if len(spectators) >= 2 and not game_over_event.is_set():
+                    print("[INFO] Promoting spectators to players...")
+                    promote_spectators_to_players(rfiles, wfiles)
+
+                    # Start the game
+                    print("[INFO] Starting the game...")
+                    broadcast_to_spectators("[INFO] The game is starting (spectate view)...\n")
+                    try:
                         run_two_play_game_online(rfiles, wfiles, spectators)
-                        game_over_event.set()
-
-                        # Reset the game state for the next game
+                    except (BrokenPipeError, ConnectionResetError):
+                        print("[INFO] A player disconnected during the game.")
+                        # Notify the remaining player
+                        for i, wfile in enumerate(wfiles):
+                            if wfile:
+                                wfile.write("[INFO] The other player has disconnected. Returning to the lobby.\n")
+                                wfile.flush()
+                                wfile.close()
+                        # Reset the game state
                         rfiles = [None, None]
                         wfiles = [None, None]
                         game_over_event.clear()
+                        continue  # Return to the main loop
 
-                        # Promote spectators to players for the next game
-                        if not promote_spectators_to_players(rfiles, wfiles):
-                            print("[INFO] Waiting for more spectators to start the next game...")
-                else:
-                    # Otherwise, treat them as a spectator
-                    spectators.append(conn)
-                    spectator_thread = threading.Thread(target=handle_spectator, args=(conn, addr), daemon=True)
-                    spectator_thread.start()
-                    spectator_threads[conn] = spectator_thread
+                    # Reset the game state for the next game
+                    rfiles = [None, None]
+                    wfiles = [None, None]
+                    game_over_event.clear()
 
             except KeyboardInterrupt:
                 print("\n[INFO] Server shutting down...")
                 break
-            except BrokenPipeError or ConnectionResetError:
-                print("[INFO] A client disconnected unexpectedly.")
             except Exception as e:
                 print(f"[ERROR] Server error: {e}")
+
+            # Clean up disconnected connections
+            connections = [conn for conn in connections if conn.fileno() != -1]
 
 
 if __name__ == "__main__":
