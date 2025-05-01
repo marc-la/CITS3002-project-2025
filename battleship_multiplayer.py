@@ -5,6 +5,7 @@ import logging
 from queue import Queue, Empty
 from threading import Thread, Lock, current_thread
 from battleship import *
+from io import StringIO
 
 # Constants
 TIMEOUT_SECONDS = 30
@@ -295,37 +296,35 @@ class TwoPlayerBattleshipGame:
                     thread.join(timeout=1)
         for wfile in self.wfiles + self.spectators:
             try:
-                wfile.close()
+                if not isinstance(wfile, StringIO):
+                    wfile.close()
             except Exception as e:
                 logging.error(f"Error closing file: {e}")
 
 
 # TEST: __main__ block updated to include edge case testing
 if __name__ == "__main__":
-    # from io import StringIO
+    # Simulate player input/output using StringIO
+    player1_input = StringIO("A1\nB2\nINVALID\nC3\n")  # Includes invalid input
+    player2_input = StringIO("D4\nE5\nF6\n")
+    player1_output = StringIO()
+    player2_output = StringIO()
+    spectator_output = StringIO()
 
-    # # Simulate player input/output using StringIO
-    # player1_input = StringIO("A1\nB2\nINVALID\nC3\n")  # Includes invalid input
-    # player2_input = StringIO("D4\nE5\nF6\n")
-    # player1_output = StringIO()
-    # player2_output = StringIO()
-    # spectator_output = StringIO()
+    rfiles = [player1_input, player2_input]
+    wfiles = [player1_output, player2_output]
+    spectators = [spectator_output]
 
-    # rfiles = [player1_input, player2_input]
-    # wfiles = [player1_output, player2_output]
-    # spectators = [spectator_output]
+    game = TwoPlayerBattleshipGame(rfiles, wfiles, spectators)
 
-    # game = TwoPlayerBattleshipGame(rfiles, wfiles, spectators)
+    try:
+        game.start_game()
+    except KeyboardInterrupt:
+        logging.info("Game interrupted.")
 
-    # try:
-    #     game.start_game()
-    # except KeyboardInterrupt:
-    #     logging.info("Game interrupted.")
-
-    # print("Player 1 Output:")
-    # print(player1_output.getvalue())
-    # print("Player 2 Output:")
-    # print(player2_output.getvalue())
-    # print("Spectator Output:")
-    # print(spectator_output.getvalue())
-    pass
+    print("Player 1 Output:")
+    print(player1_output.getvalue())
+    print("Player 2 Output:")
+    print(player2_output.getvalue())
+    print("Spectator Output:")
+    print(spectator_output.getvalue())
