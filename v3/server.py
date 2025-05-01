@@ -3,7 +3,7 @@
 # Imports
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 from threading import Thread, Event, current_thread
-from battleship_multiplayer import TwoPlayerBattleshipGame
+from v4.battleship_multiplayer import TwoPlayerBattleshipGame
 import logging
 
 # Configure logging

@@ -76,6 +76,7 @@ def handle_spectator(conn, addr):
 
             while True:
                 # Check if the spectator has been promoted to a player
+                print(player_connections)
                 if (conn, addr) in player_connections:
                     logging.info(f"Spectator {addr} promoted to player. Exiting spectator mode.")
                     break
@@ -113,21 +114,27 @@ def start_game():
     Start a new game.
     """
     try:
-        # Extract the first two players from rfiles and wfiles
+        # Extract the first two players from the waiting lobby
+        global player_connections
         player_connections = [waiting_lobby_queue.pop(0), waiting_lobby_queue.pop(0)]
-        spectator_threads[player_connections[0]].join()  # Wait for their thread to terminate
-        spectator_threads[player_connections[1]].join()  # Wait for their thread to terminate
-        
-        player_rfiles = [rfiles[player_connections[0]], rfiles[player_connections[1]]]
-        player_wfiles = [wfiles[player_connections[0]], wfiles[player_connections[1]]]
 
+        # Wait for their spectator threads to terminate
+        spectator_threads[player_connections[0][0]].join()  # Use conn as the key
+        spectator_threads[player_connections[1][0]].join()  # Use conn as the key
+
+        # Extract rfiles and wfiles using conn as the key
+        player_rfiles = [rfiles[player_connections[0][0]], rfiles[player_connections[1][0]]]
+        player_wfiles = [wfiles[player_connections[0][0]], wfiles[player_connections[1][0]]]
+        logging.info(f"Starting game with players: {player_connections[0][1]} and {player_connections[1][1]}")
+        # Start the game
         game = TwoPlayerBattleshipGame(player_rfiles, player_wfiles, waiting_lobby_queue)
         game.start_game()
+    except KeyError as e:
+        logging.error(f"KeyError during game setup: {e}")
     except Exception as e:
         logging.error(f"Error during game: {e}")
     finally:
         game_over_event.clear()
-
 
 def shutdown_server():
     """
