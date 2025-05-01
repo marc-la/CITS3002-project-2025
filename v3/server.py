@@ -53,7 +53,6 @@ class Server:
         self.rfiles = [None, None]
         self.wfiles = [None, None]
         self.game_over_event = Event()
-        self.running = True
     
     def start(self):
         """
@@ -66,7 +65,7 @@ class Server:
             s.listen(self.max_connections)
             logging.info("Waiting for players to connect...")
 
-            while self.running:
+            while True:
                 try:
                     conn, addr = s.accept()
                     logging.info(f"Accepted connection from {addr}")
@@ -74,7 +73,7 @@ class Server:
                     self.handle_new_connection(conn, addr)
                 except KeyboardInterrupt:
                     logging.info("Server shutting down...")
-                    self.running = False
+                    break
                 except Exception as e:
                     logging.error(f"Server error: {e}")
     
@@ -169,7 +168,6 @@ class Server:
         """
         Clean up resources and shut down the server.
         """
-        self.running = False
         for conn in self.connections:
             try:
                 conn.close()
