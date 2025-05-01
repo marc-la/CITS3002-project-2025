@@ -53,6 +53,38 @@ def start_server():
             except Exception as e:
                 logging.error(f"Server error: {e}")
 
+def start_game():
+    """
+    Start a new game.
+    """
+    try:
+        # Extract the first two players from the waiting lobby
+        global player_connections
+        player_connections = [waiting_lobby_queue.pop(0), waiting_lobby_queue.pop(0)]
+
+        # Wait for their spectator threads to terminate
+        spectator_threads[player_connections[0][0]].join()  # Use conn as the key
+        spectator_threads[player_connections[1][0]].join()  # Use conn as the key
+
+        # Extract rfiles and wfiles using conn as the key
+        player_rfiles = [rfiles[player_connections[0][0]], rfiles[player_connections[1][0]]]
+        player_wfiles = [wfiles[player_connections[0][0]], wfiles[player_connections[1][0]]]
+        logging.info(f"Starting game with players: {player_connections[0][1]} and {player_connections[1][1]}")
+        # Start the game
+
+        try:
+            game = TwoPlayerBattleshipGame(player_rfiles, player_wfiles, waiting_lobby_queue)
+            game.start_game()
+        except (BrokenPipeError, ConnectionResetError):
+            logging.error(f"Connection error during game: {e}")
+        
+    except KeyError as e:
+        logging.error(f"KeyError during game setup: {e}")
+    except Exception as e:
+        logging.error(f"Error during game: {e}")
+    finally:
+        game_over_event.clear()
+
 def handle_new_connection(conn, addr):
     """
     Handle a new connection, assigning it as a player or spectator.
@@ -95,7 +127,7 @@ def handle_spectator(conn, addr):
     except Exception as e:
         logging.error(f"Error with spectator {addr}: {e}")
     finally:
-        if (conn, addr) in waiting_lobby_queue:
+        if (conn, addr) in spectator_threads:
             del spectator_threads[(conn, addr)]
 
 def broadcast_to_spectators(message):
@@ -109,35 +141,6 @@ def broadcast_to_spectators(message):
             conn.sendall(message.encode('utf-8'))
         except Exception:
             waiting_lobby_queue.remove(spectator)
-
-def start_game():
-    """
-    Start a new game.
-    """
-    try:
-        # Extract the first two players from the waiting lobby
-        global player_connections
-        player_connections = [waiting_lobby_queue.pop(0), waiting_lobby_queue.pop(0)]
-
-        # Wait for their spectator threads to terminate
-        spectator_threads[player_connections[0][0]].join()  # Use conn as the key
-        spectator_threads[player_connections[1][0]].join()  # Use conn as the key
-
-        # Extract rfiles and wfiles using conn as the key
-        player_rfiles = [rfiles[player_connections[0][0]], rfiles[player_connections[1][0]]]
-        player_wfiles = [wfiles[player_connections[0][0]], wfiles[player_connections[1][0]]]
-        logging.info(f"Starting game with players: {player_connections[0][1]} and {player_connections[1][1]}")
-        # Start the game
-
-        broadcast_to_spectators("[INFO] The game is starting (spectate view)...\n")
-        game = TwoPlayerBattleshipGame(player_rfiles, player_wfiles, waiting_lobby_queue)
-        game.start_game()
-    except KeyError as e:
-        logging.error(f"KeyError during game setup: {e}")
-    except Exception as e:
-        logging.error(f"Error during game: {e}")
-    finally:
-        game_over_event.clear()
 
 def shutdown_server():
     """
