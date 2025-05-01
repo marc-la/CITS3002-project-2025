@@ -29,7 +29,13 @@ def start_server():
     logging.info(f"Server listening on {HOST}:{PORT}")
     with socket(AF_INET, SOCK_STREAM) as s:
         s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-        s.bind((HOST, PORT))
+        try:
+            s.bind((HOST, PORT))
+        except OSError as e:
+            if e.errno == 98:  # Address already in use
+                logging.error(f"Port {PORT} is already in use. Please ensure no other instance is running.")
+                return
+            raise
         s.listen(MAX_CONNECTIONS)
         logging.info("Waiting for players to connect...")
 
@@ -140,7 +146,7 @@ def shutdown_server():
     """
     Clean up resources and shut down the server.
     """
-    for conn, addr in waiting_lobby_queue + player_connections:
+    for conn, addr in filter(None, waiting_lobby_queue + player_connections):
         try:
             conn.close()
         except Exception as e:
