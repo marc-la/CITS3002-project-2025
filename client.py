@@ -102,7 +102,7 @@ def run_client(host, port):
         input_loop(wfile)
 
         # Wait for the receiver thread to finish
-        receiver_thread.join()
+        receiver_thread.join(timeout=1)
 
 if __name__ == "__main__":
     run_client(host=HOST, port=PORT)

@@ -110,30 +110,61 @@ def broadcast_to_spectators(message):
         except Exception:
             waiting_lobby_queue.remove(spectator)
 
+def handle_disconnection(player_index):
+    """
+    Handle player disconnection.
+    """
+    global player_connections
+    conn, addr = player_connections[player_index]
+    logging.info(f"Player {player_index + 1} ({addr}) disconnected.")
+    
+    # Remove player from connections
+    player_connections[player_index] = None
+    try:
+        conn.close()
+    except Exception as e:
+        logging.error(f"Error closing connection for player {player_index + 1}: {e}")
+
+    # Notify the other player and spectators
+    other_player_index = 1 - player_index
+    if player_connections[other_player_index]:
+        try:
+            wfiles[player_connections[other_player_index][0]].write("[INFO] The opponent disconnected. You win!\n")
+            wfiles[player_connections[other_player_index][0]].flush()
+        except Exception as e:
+            logging.error(f"Error notifying other player: {e}")
+
+    broadcast_to_spectators("[INFO] Game ended due to player disconnection.\n")
+    game_over_event.set()
+
 def start_game():
     """
     Start a new game.
     """
     try:
-        # Extract the first two players from the waiting lobby
         global player_connections
         player_connections = [waiting_lobby_queue.pop(0), waiting_lobby_queue.pop(0)]
 
         # Wait for their spectator threads to terminate
-        spectator_threads[player_connections[0][0]].join()  # Use conn as the key
-        spectator_threads[player_connections[1][0]].join()  # Use conn as the key
+        for player in player_connections:
+            spectator_threads[player[0]].join()
 
-        # Extract rfiles and wfiles using conn as the key
-        player_rfiles = [rfiles[player_connections[0][0]], rfiles[player_connections[1][0]]]
-        player_wfiles = [wfiles[player_connections[0][0]], wfiles[player_connections[1][0]]]
+        player_rfiles = [rfiles[player[0]] for player in player_connections]
+        player_wfiles = [wfiles[player[0]] for player in player_connections]
         logging.info(f"Starting game with players: {player_connections[0][1]} and {player_connections[1][1]}")
-        # Start the game
 
         broadcast_to_spectators("[INFO] The game is starting (spectate view)...\n")
         game = TwoPlayerBattleshipGame(player_rfiles, player_wfiles, waiting_lobby_queue)
-        game.start_game()
-    except KeyError as e:
-        logging.error(f"KeyError during game setup: {e}")
+
+        # Monitor game and handle disconnections
+        game_thread = Thread(target=game.start_game, daemon=True)
+        game_thread.start()
+        game_thread.join()
+
+        # Check for disconnections
+        for i, player in enumerate(player_connections):
+            if not player:
+                handle_disconnection(i)
     except Exception as e:
         logging.error(f"Error during game: {e}")
     finally:
@@ -143,6 +174,7 @@ def shutdown_server():
     """
     Clean up resources and shut down the server.
     """
+    logging.info("Shutting down server...")
     for conn, addr in filter(None, waiting_lobby_queue + player_connections):
         try:
             conn.close()
