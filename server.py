@@ -40,7 +40,6 @@ def start_server():
                 handle_new_connection(conn, addr)
                 if len(waiting_lobby_queue) >= 2:  # Check if there is space for a player
                     logging.info("Both players connected. Starting the game...")
-                    broadcast_to_spectators("[INFO] The game is starting (spectate view)...\n")
                     start_game()
             except KeyboardInterrupt:
                 logging.info("Server shutting down...")
@@ -76,7 +75,6 @@ def handle_spectator(conn, addr):
 
             while True:
                 # Check if the spectator has been promoted to a player
-                print(player_connections)
                 if (conn, addr) in player_connections:
                     logging.info(f"Spectator {addr} promoted to player. Exiting spectator mode.")
                     break
@@ -91,10 +89,7 @@ def handle_spectator(conn, addr):
     except Exception as e:
         logging.error(f"Error with spectator {addr}: {e}")
     finally:
-        # Clean up the spectator from the waiting lobby and threads
         if (conn, addr) in waiting_lobby_queue:
-            waiting_lobby_queue.remove((conn, addr))
-        if (conn, addr) in spectator_threads:
             del spectator_threads[(conn, addr)]
 
 def broadcast_to_spectators(message):
@@ -127,6 +122,8 @@ def start_game():
         player_wfiles = [wfiles[player_connections[0][0]], wfiles[player_connections[1][0]]]
         logging.info(f"Starting game with players: {player_connections[0][1]} and {player_connections[1][1]}")
         # Start the game
+
+        broadcast_to_spectators("[INFO] The game is starting (spectate view)...\n")
         game = TwoPlayerBattleshipGame(player_rfiles, player_wfiles, waiting_lobby_queue)
         game.start_game()
     except KeyError as e:
