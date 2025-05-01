@@ -4,17 +4,12 @@
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 from threading import Thread, Event
 from battleship_multiplayer import TwoPlayerBattleshipGame
-import logging
+from config import *
 import time
 import select
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
 # Global Variables
-HOST = "127.0.0.1"
-PORT = 5000
-MAX_CONNECTIONS = 12
 player_connections = [None, None] # Store (conn, addr) tuples for players
 waiting_lobby_queue = [] # Store (conn, addr) tuples for spectators
 spectator_threads = {} # Spectator threads

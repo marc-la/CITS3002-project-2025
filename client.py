@@ -5,17 +5,10 @@ from sys import stdin
 from select import select
 from socket import socket, AF_INET, SOCK_STREAM
 from threading import Event, Thread
+from config import *
 import time
-import logging
-import select
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
 # Global Variables
-HOST = '127.0.0.1'
-PORT = 5000
-INPUT_TIMEOUT = 30
 game_over_event = Event()
 input_timer = Event()
 is_spectator_event = Event()
@@ -26,7 +19,7 @@ def receive_messages(rfile):
     """
     try:
         while not game_over_event.is_set():
-            ready, _, _ = select.select([rfile], [], [], 1)  # Timeout of 1 second
+            ready, _, _ = select([rfile], [], [], 1)  # Timeout of 1 second
             if ready:
                 line = rfile.readline().strip()
                 if not line:

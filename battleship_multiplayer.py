@@ -1,17 +1,11 @@
 #!/usr/bin/env python3
 
 # Imports
-import logging
 from queue import Queue, Empty
 from threading import Thread, Lock, current_thread
 from battleship import *
+from config import *
 from io import StringIO
-
-# Constants
-TIMEOUT_SECONDS = 30
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
 class TwoPlayerBattleshipGame:
     """
