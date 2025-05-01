@@ -59,7 +59,6 @@ def input_loop(wfile):
     Handles user input and sends it to the server.
     """
     try:
-        print(">> ", end="", flush=True)
         while not game_over_event.is_set():
             time_counter = 0
             while input_timer.is_set():
