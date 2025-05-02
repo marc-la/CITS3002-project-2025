@@ -295,7 +295,7 @@ class TwoPlayerBattleshipGame:
 
         logging.info("Cleaning up game resources...")
         for thread in self.listener_threads:
-            if thread.is_alive():
+            if thread.is_alive() and thread != current_thread():
                 thread.join(timeout=1)
         for wfile in self.wfiles + self.spectators:
             try:
