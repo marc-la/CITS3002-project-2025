@@ -1,219 +1,142 @@
 #!/usr/bin/env python3
 
-# Imports
-from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
-from threading import Thread, Event
+import socket
+import threading
+import select
 from battleship_multiplayer import TwoPlayerBattleshipGame
 from config import *
-import time
-import select
-
 
 # Global Variables
-player_connections = [None, None] # Store (conn, addr) tuples for players
-waiting_lobby_queue = [] # Store (conn, addr) tuples for spectators
-spectator_threads = {} # Spectator threads
-rfiles = {} # Read file objects for all connections
-wfiles = {} # Write file objects for all connections
-game_over_event = Event()
+player_connections = [None, None]  # Store (conn, addr) tuples for players
+waiting_lobby = []  # Store (conn, addr) tuples for spectators
+spectator_threads = {}  # Threads for spectators
+game_over_event = threading.Event()
+lock = threading.Lock()
 
-def start_server():
-    """
-    Start the server and accept connections.
-    """
-    logging.info(f"Server listening on {HOST}:{PORT}")
-    with socket(AF_INET, SOCK_STREAM) as s:
-        s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-        try:
-            s.bind((HOST, PORT))
-        except OSError as e:
-            if e.errno == 98:  # Address already in use
-                logging.error(f"Port {PORT} is already in use. Please ensure no other instance is running.")
-                return
-            raise
-        s.listen(MAX_CONNECTIONS)
-        logging.info("Waiting for players to connect...")
 
-        while True:
-            try:
-                conn, addr = s.accept()
-                logging.info(f"Accepted connection from {addr}")
-                handle_new_connection(conn, addr)
-                if len(waiting_lobby_queue) >= 2:  # Check if there is space for a player
-                    logging.info("Both players connected. Starting the game...")
-                    start_game()
-            except KeyboardInterrupt:
-                logging.info("Server shutting down...")
-                break
-            except Exception as e:
-                logging.error(f"Server error: {e}")
-
-def start_game():
+def handle_player(conn, addr, player_id):
     """
-    Start a new game.
+    Handle a player connection.
     """
     try:
-        # Extract the first two players from the waiting lobby
-        global player_connections
-        player_connections = [waiting_lobby_queue.pop(0), waiting_lobby_queue.pop(0)]
+        rfile = conn.makefile('r')
+        wfile = conn.makefile('w')
+        wfile.write(f"[INFO] Welcome Player {player_id + 1}. Waiting for the game to start...\n")
+        wfile.flush()
 
-        # Wait for their spectator threads to terminate
-        spectator_threads[player_connections[0][0]].join()  # Use conn as the key
-        spectator_threads[player_connections[1][0]].join()  # Use conn as the key
+        with lock:
+            player_connections[player_id] = (conn, addr, rfile, wfile)
 
-        # Extract rfiles and wfiles using conn as the key
-        player_rfiles = [rfiles[player_connections[0][0]], rfiles[player_connections[1][0]]]
-        player_wfiles = [wfiles[player_connections[0][0]], wfiles[player_connections[1][0]]]
-        logging.info(f"Starting game with players: {player_connections[0][1]} and {player_connections[1][1]}")
-        # Start the game
+        # Wait for both players to connect
+        if all(player_connections):
+            logging.info("Both players connected. Starting the game...")
+            start_game()
 
-        try:
-            game = TwoPlayerBattleshipGame(player_rfiles, player_wfiles, waiting_lobby_queue)
-            game.start_game()
-        except (BrokenPipeError, ConnectionResetError):
-            logging.error(f"Connection error during game: {e}")
-        
-    except KeyError as e:
-        logging.error(f"KeyError during game setup: {e}")
     except Exception as e:
-        logging.error(f"Error during game: {e}")
+        logging.error(f"Error with Player {player_id + 1}: {e}")
     finally:
-        game_over_event.clear()
+        with lock:
+            player_connections[player_id] = None
+        conn.close()
 
-def handle_new_connection(conn, addr):
-    """
-    Handle a new connection, assigning it as a player or spectator.
-    """
-    waiting_lobby_queue.append((conn, addr))
-    rfiles[conn] = conn.makefile('r')
-    wfiles[conn] = conn.makefile('w')
-    wfiles[conn].write("[INFO] You are connected to the server and in the waiting lobby. Type 'quit' to leave.\n")
-    wfiles[conn].flush()
-
-    spectator_thread = Thread(target=handle_spectator, args=(conn, addr), daemon=True)
-    spectator_thread.start()
-    spectator_threads[conn] = spectator_thread
 
 def handle_spectator(conn, addr):
     """
     Handle a spectator connection.
     """
-    logging.info(f"Spectator connected from {addr}")
     try:
-        with conn:
-            rfile = conn.makefile('r')
-            wfile = conn.makefile('w')
-            wfile.write("[INFO] You are now spectating the game. Type 'quit' to leave.\n")
-            wfile.flush()
+        rfile = conn.makefile('r')
+        wfile = conn.makefile('w')
+        wfile.write("[INFO] You are now spectating the game. Type 'quit' to leave.\n")
+        wfile.flush()
 
-            while True:
-                # Check if the spectator has been promoted to a player
-                if (conn, addr) in player_connections:
-                    logging.info(f"Spectator {addr} promoted to player. Exiting spectator mode.")
+        while True:
+            ready, _, _ = select.select([rfile], [], [], 1)
+            if ready:
+                line = rfile.readline().strip()
+                if not line or line.lower() == "quit":
+                    logging.info(f"Spectator {addr} disconnected.")
                     break
-
-                # Use select to check for input without blocking
-                ready, _, _ = select.select([rfile], [], [], 1)  # Timeout of 1 second
-                if ready:
-                    line = rfile.readline().strip()
-                    if not line or line.lower() == "quit":
-                        logging.info(f"Spectator {addr} disconnected.")
-                        break
     except Exception as e:
         logging.error(f"Error with spectator {addr}: {e}")
     finally:
-        if (conn, addr) in spectator_threads:
-            del spectator_threads[(conn, addr)]
-
-def broadcast_to_spectators(message):
-    """
-    Broadcast a message to all spectators.
-    """
-    # Iterate over a copy
-    for spectator in waiting_lobby_queue:
-        conn, addr = spectator
-        try:
-            conn.sendall(message.encode('utf-8'))
-        except Exception:
-            waiting_lobby_queue.remove(spectator)
-
-def handle_disconnection(player_index):
-    """
-    Handle player disconnection.
-    """
-    global player_connections
-    conn, addr = player_connections[player_index]
-    logging.info(f"Player {player_index + 1} ({addr}) disconnected.")
-    
-    # Remove player from connections
-    player_connections[player_index] = None
-    try:
+        with lock:
+            if conn in waiting_lobby:
+                waiting_lobby.remove(conn)
         conn.close()
-    except Exception as e:
-        logging.error(f"Error closing connection for player {player_index + 1}: {e}")
 
-    # Notify the other player and spectators
-    other_player_index = 1 - player_index
-    if player_connections[other_player_index]:
-        try:
-            wfiles[player_connections[other_player_index][0]].write("[INFO] The opponent disconnected. You win!\n")
-            wfiles[player_connections[other_player_index][0]].flush()
-        except Exception as e:
-            logging.error(f"Error notifying other player: {e}")
-
-    broadcast_to_spectators("[INFO] Game ended due to player disconnection.\n")
-    game_over_event.set()
 
 def start_game():
     """
-    Start a new game.
+    Start a new game with the connected players.
     """
-    try:
-        global player_connections
-        player_connections = [waiting_lobby_queue.pop(0), waiting_lobby_queue.pop(0)]
+    global game_over_event
+    game_over_event.clear()
 
-        # Wait for their spectator threads to terminate
-        for player in player_connections:
-            spectator_threads[player[0]].join()
+    # Extract player file objects
+    rfiles = [player[2] for player in player_connections]
+    wfiles = [player[3] for player in player_connections]
 
-        player_rfiles = [rfiles[player[0]] for player in player_connections]
-        player_wfiles = [wfiles[player[0]] for player in player_connections]
-        logging.info(f"Starting game with players: {player_connections[0][1]} and {player_connections[1][1]}")
+    # Run the game in a separate thread
+    game_thread = threading.Thread(
+        target=TwoPlayerBattleshipGame().run_game,
+        args=(rfiles, wfiles, waiting_lobby, game_over_event),
+        daemon=True
+    )
+    game_thread.start()
 
-        broadcast_to_spectators("[INFO] The game is starting (spectate view)...\n")
-        game = TwoPlayerBattleshipGame(player_rfiles, player_wfiles, waiting_lobby_queue)
+    # Wait for the game to end
+    game_thread.join()
 
-        # Monitor game and handle disconnections
-        game_thread = Thread(target=game.start_game, daemon=True)
-        game_thread.start()
-        game_thread.join()
+    # Notify players and reset connections
+    for player in player_connections:
+        if player:
+            player[3].write("[INFO] Game over. Waiting for a new game...\n")
+            player[3].flush()
 
-        # Check for disconnections
-        for i, player in enumerate(player_connections):
-            if not player:
-                handle_disconnection(i)
-    except Exception as e:
-        logging.error(f"Error during game: {e}")
-    finally:
-        game_over_event.clear()
+    with lock:
+        for i in range(2):
+            player_connections[i] = None
 
-def shutdown_server():
+
+def accept_connections(server_socket):
     """
-    Clean up resources and shut down the server.
+    Accept incoming connections and assign them as players or spectators.
     """
-    logging.info("Shutting down server...")
-    for conn, addr in filter(None, waiting_lobby_queue + player_connections):
+    while True:
+        conn, addr = server_socket.accept()
+        logging.info(f"New connection from {addr}")
+
+        with lock:
+            # Assign as a player if slots are available
+            if None in player_connections:
+                player_id = player_connections.index(None)
+                threading.Thread(target=handle_player, args=(conn, addr, player_id), daemon=True).start()
+            else:
+                # Add to the waiting lobby as a spectator
+                waiting_lobby.append(conn)
+                spectator_thread = threading.Thread(target=handle_spectator, args=(conn, addr), daemon=True)
+                spectator_thread.start()
+                spectator_threads[conn] = spectator_thread
+
+
+def main():
+    """
+    Main server function to start the server and accept connections.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket.bind((HOST, PORT))
+        server_socket.listen(MAX_CONNECTIONS)
+        logging.info(f"Server started on {HOST}:{PORT}")
+
         try:
-            conn.close()
-        except Exception as e:
-            logging.error(f"Error closing connection: {e}")
-    for thread in spectator_threads.values():
-        thread.join()
-    logging.info("Server shutdown complete.")
+            accept_connections(server_socket)
+        except KeyboardInterrupt:
+            logging.info("Shutting down server...")
+        finally:
+            server_socket.close()
+
 
 if __name__ == "__main__":
-    try:
-        start_server()
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}")
-        shutdown_server()
+    main()
