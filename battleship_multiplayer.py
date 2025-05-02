@@ -53,9 +53,7 @@ class TwoPlayerBattleshipGame:
                     logging.debug(f"Player {player} input: {input_line}")  # Debugging log
                     if input_line == "":
                         # Check if the game is still running before marking as disconnected
-                        if self.disconnected[player]:
-                            logging.info(f"Player {player} disconnected.")
-                            self.handle_disconnection(player)
+                        self.handle_disconnection(player)
                         break
 
                     # Push input into the queue
@@ -149,8 +147,8 @@ class TwoPlayerBattleshipGame:
         Main function to start and run the game.
         """
         try:
-            self.start_input_listeners()
             self.initialise_boards()
+            self.start_input_listeners()
             self.broadcast_players("The game begins! Players will alternate turns firing at each other.")
             self.play_game()
         except Exception as e:
