@@ -270,11 +270,12 @@ class TwoPlayerBattleshipGame:
         """
         Handle player timeout.
         """
-        logging.info(f"Player {self.current_player} timed out.")
-        self.send(self.current_player, "Timeout! You took too long. Your turn is skipped.")
-        self.send(self.other_player, "The opponent took too long. It's now your turn.")
-        self.broadcast_players(f"Player {self.current_player} timed out.")
-        self.switch_turns()
+        with self.lock:
+            logging.info(f"Player {self.current_player} timed out.")
+            self.send(self.current_player, "Timeout! You took too long. Your turn is skipped.")
+            self.send(self.other_player, "The opponent took too long. It's now your turn.")
+            self.broadcast_players(f"Player {self.current_player} timed out.")
+            self.switch_turns()
 
     def switch_turns(self):
         """

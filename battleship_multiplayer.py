@@ -2,7 +2,7 @@
 
 # Imports
 from queue import Queue, Empty
-from threading import Thread, current_thread
+from threading import Thread, Lock, current_thread
 from battleship import *
 from config import *
 from io import StringIO
@@ -24,6 +24,7 @@ class TwoPlayerBattleshipGame:
         boards (list): The game boards for each player.
         current_player (int): The index of the player whose turn it is.
         other_player (int): The index of the opponent player.
+        lock (Lock): Ensure thread-safe access
         disconnected (list): Track disconnection status for each player.
     """
 
@@ -38,8 +39,9 @@ class TwoPlayerBattleshipGame:
         self.boards = [Board(BOARD_SIZE), Board(BOARD_SIZE)]
         self.current_player = 0
         self.other_player = 1
-        self.disconnected = [False, False]
         self.listener_threads = []
+        self.lock = Lock()
+        self.disconnected = [False, False]
 
     def input_listener(self, player):
         """
@@ -53,16 +55,17 @@ class TwoPlayerBattleshipGame:
                     logging.debug(f"Player {player} input: {input_line}")  # Debugging log
                     if input_line == "":
                         # Check if the game is still running before marking as disconnected
-                        if self.disconnected[player]:
-                            logging.info(f"Player {player} disconnected.")
-                            self.handle_disconnection(player)
+                        with self.lock:
+                            if not self.disconnected[player]:
+                                logging.info(f"Player {player} disconnected.")
+                                self.handle_disconnection()
                         break
 
                     # Push input into the queue
                     self.player_inputs[player].put(input_line)
                 except Exception as e:
                     logging.error(f"Error receiving input from player {player}: {e}")
-                    self.handle_disconnection(player)
+                    self.handle_disconnection()
                     break
         except Exception as e:
             logging.error(f"Unexpected error in input listener for player {player}: {e}")
@@ -74,9 +77,8 @@ class TwoPlayerBattleshipGame:
         try:
             self.wfiles[player].write(msg + '\n')
             self.wfiles[player].flush()
-        except (BrokenPipeError, ValueError) as e:
+        except Exception as e:
             logging.error(f"Failed to send message to player {player}: {e}")
-            self.handle_disconnection(player)
 
     def broadcast_players(self, msg):
         """
@@ -141,7 +143,7 @@ class TwoPlayerBattleshipGame:
             self.send(player, "Welcome to Battleship! Place your ships.")
 
             # TODO: Implement manual placements of ships 
-            self.boards[player].place_ships_randomly()
+            self.boards[player].place_ships_randomly(SHIPS)
             self.send(player, "Your ships have been placed.")
 
     def start_game(self):
@@ -156,14 +158,13 @@ class TwoPlayerBattleshipGame:
         except Exception as e:
             logging.error(f"Unexpected error during game: {e}")
         finally:
-            # Ensure cleanup is only called once
-            if not getattr(self, "_cleaned_up", False):
-                self.cleanup()
+            self.cleanup()
 
     def play_game(self):
         """
         Handle the main gameplay loop.
         """
+        self.send_board(self.other_player, self.boards[self.other_player], self.boards[self.current_player])
         while True:
             try:
                 if self.disconnected[self.current_player]:
@@ -246,40 +247,31 @@ class TwoPlayerBattleshipGame:
             return True
         return False
 
-    def handle_disconnection(self, player_index):
+    def handle_disconnection(self):
         """
         Handle player disconnection.
         """
-        if self.disconnected[player_index]:
+        if self.disconnected[self.current_player]:
             # Avoid handling disconnection multiple times
             return  
-        self.disconnected[player_index] = True
+        self.disconnected[self.current_player] = True
 
-        logging.info(f"Player {player_index} disconnected. Ending game.")
+        logging.info("Handling player disconnection...")
+        self.send(self.current_player, "You disconnected or timed out. You forfeit the game.")
         self.send(self.other_player, "The opponent disconnected or timed out. You win!")
         self.broadcast_players("Game over due to disconnection.")
-
-        # Only call cleanup if it hasn't already been called
-        if not getattr(self, "_cleaned_up", False):
-            self.cleanup()
+        self.cleanup()
 
     def handle_timeout(self):
         """
         Handle player timeout by skipping their turn and switching to the other player.
         """
-        logging.info(f"Player {self.current_player} timed out.")
-        self.send(self.current_player, "Timeout! You took too long. Your turn is skipped.")
-        self.send(self.other_player, "The opponent took too long. It's now your turn.")
-        self.broadcast_players(f"Player {self.current_player} timed out.")
-
-        # Check if the player has timed out multiple times
-        if self.player_inputs[self.current_player].empty() and self.disconnected[self.current_player]:
-            logging.info(f"Player {self.current_player} disconnected due to repeated timeouts.")
-            self.handle_disconnection(self.current_player)
-            return
-        
-        # Ensure the turn switches to the other player
-        self.switch_turns()  
+        with self.lock:
+            logging.info(f"Player {self.current_player} timed out.")
+            self.send(self.current_player, "Timeout! You took too long. Your turn is skipped.")
+            self.send(self.other_player, "The opponent took too long. It's now your turn.")
+            self.broadcast_players(f"Player {self.current_player} timed out.")
+            self.switch_turns()  # Ensure the turn switches to the other player
 
     def switch_turns(self):
         """
@@ -289,19 +281,15 @@ class TwoPlayerBattleshipGame:
 
     def cleanup(self):
         """
-        Clean up resources for the game instance.
+        Clean up resources and terminate threads.
         """
-        if getattr(self, "_cleaned_up", False):
-            return  # Avoid redundant cleanup
-        self._cleaned_up = True
-
-        logging.info("Cleaning up game resources...")
-        for thread in self.listener_threads:
-            if thread.is_alive():
-                thread.join(timeout=1)
+        logging.info("Cleaning up resources...")
+        with self.lock: 
+            for thread in self.listener_threads:
+                if thread is not current_thread():
+                    thread.join(timeout=1)
         for wfile in self.wfiles + self.spectators:
             try:
-                # Only close real file objects, not StringIO (used for testing)
                 if not isinstance(wfile, StringIO):
                     wfile.close()
             except Exception as e:
