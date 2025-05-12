@@ -41,7 +41,7 @@ class Player:
                 logging.error(f"Error getting input for player {self.name}: {e}")
                 break
 
-    def send(self, msg):
+    def send(self, msg: str):
         try:
             self.wfile.write(msg + '\n')
             self.wfile.flush()
