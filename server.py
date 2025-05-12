@@ -4,6 +4,7 @@ from threading import Thread, Event, Lock
 from config import *
 from select import select
 from battleship import run_two_player_battleship_game
+from queue import Queue, Empty
 import time
 
 client_files = {} # username as key, (wfile, rfile) as value
@@ -11,7 +12,7 @@ client_conns = {} # username as key, (conn, addr) as value
 players = [None, None] # Store username of players
 waiting_lobby_queue = [] # Store usernames of spectators
 game_ongoing_event = Event()
-client_inputs = []
+player_inputs = [Queue(), Queue()]  # Queues for player inputs
 
 def handle_disconnect(username):
     """
@@ -54,7 +55,6 @@ def get_username_from_client(wfile, rfile, conn, addr):
     except Exception as e:
         logging.error(f"Error receiving messages: {e}")
 
-
 # THREAD FUNCTION
 def receive_client_messages(conn, addr):
     rfile = conn.makefile('r')
@@ -77,17 +77,25 @@ def receive_client_messages(conn, addr):
                 break
             elif username in waiting_lobby_queue and line.strip().lower()[:4] == "CHAT":
                 broadcast_message(f"[{username}] {line[5:]}")
+            elif username in players:
+                print(f"[{username}] {line.strip()}")
+                player_inputs[players.index(username)].put(line.strip())
 
 def check_start_game():
     """
     Check if the game can start.
     """
+    global players
     while True: 
         time.sleep(1)  # Check every second
         if len(waiting_lobby_queue) >= 2 and not game_ongoing_event.is_set():
             logging.info("Starting the game...")
             players = [waiting_lobby_queue.pop(0), waiting_lobby_queue.pop(0)]
-            run_two_player_battleship_game(players, client_files)
+            client_files[players[0]][0].write(f"[INFO] The game is starting!\n")
+            client_files[players[0]][0].flush()
+            client_files[players[1]][0].write(f"[INFO] The game is starting!\n")
+            client_files[players[1]][0].flush()
+            run_two_player_battleship_game(players, client_files, player_inputs)
             game_ongoing_event.clear()
             del client_conns[players[0]]
             del client_conns[players[1]]
@@ -98,6 +106,7 @@ def check_start_game():
             logging.info("Game ended. Waiting for new players...")
 
 def main():
+    global players, client_files, client_conns, waiting_lobby_queue, player_inputs
     """
     Start the server and accept connections.
     """

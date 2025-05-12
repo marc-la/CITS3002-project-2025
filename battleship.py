@@ -294,10 +294,10 @@ def run_single_player_game_locally():
         except ValueError as e:
             print("  >> Invalid input:", e)
 
-def run_two_player_battleship_game(players, client_files):
-    print("Starting a two-player game...")
+def run_two_player_battleship_game(players, client_files, player_inputs):
     while True:
-        pass
+        print(f"[{players[0]}]: {player_inputs[0].get()}")
+        print(f"[{players[1]}]: {player_inputs[1].get()}")
 
 if __name__ == "__main__":
     # Optional: run this file as a script to test single-player mode
