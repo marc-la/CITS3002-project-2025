@@ -91,12 +91,6 @@ def display_board(player, opponent):
 
 
 def send_to_both_players(players: list[Player], msg: str):
-    """
-    Sends a message to both players.
-
-    @param players (list): A list of the 2 players objects in the game.
-    @param msg (str): The message to send.
-    """
     for player in players:
         player.send(msg)
 
