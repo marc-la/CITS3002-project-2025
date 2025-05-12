@@ -129,6 +129,7 @@ def run_two_player_battleship_game(players: list, client_files: dict):
 
     # 3. Main game loop
     send_to_both_players(player_list, "The game begins! Players will alternate turns firing at each other.")
+    should_print_board_to_player = True
     while True:
         # Check for disconnections
         if current_player.is_disconnected.is_set() or other_player.is_disconnected.is_set():
@@ -136,9 +137,10 @@ def run_two_player_battleship_game(players: list, client_files: dict):
             break
         
         #    - Prompt for move, receive input
-        display_board(current_player, other_player)
-        current_player.send(f"Your Turn. Enter a coordinate to fire at (e.g., B5). You have {TIMEOUT_SECONDS} seconds:")
-        other_player.send("Waiting for the other player to take their turn...")
+        if should_print_board_to_player:
+            display_board(current_player, other_player)
+            current_player.send(f"Your Turn. Enter a coordinate to fire at (e.g., B5). You have {TIMEOUT_SECONDS} seconds:")
+            other_player.send("Waiting for the other player to take their turn...")
 
         #    - Validate/process move, update boards
         guess = current_player.get_next_input()
@@ -151,10 +153,27 @@ def run_two_player_battleship_game(players: list, client_files: dict):
             row, col = parse_coordinate(guess)
             if row < 0 or row >= BOARD_SIZE or \
                 col < 0 or col >= BOARD_SIZE:
-                 raise ValueError("Coordinates out of bounds.")
-        except ValueError as e:
-                current_player.send(f"Invalid input: {e}. Try again.")
-                return False
+                 raise ValueError
+        except Exception as e:
+                current_player.send(f"Invalid input. Try again.")
+                should_print_board_to_player = False
+                continue
+        
+        # Check if the coordinate has already been guessed
+        result, was_sunk = other_player.board.fire_at(row, col)
+        if result == "hit":
+            pass
+        else:
+
+        
+        #    - Check for win/loss
+        if other_player.board.all_ships_sunk():
+            current_player.send("You win! All opponent's ships are sunk.")
+            other_player.send("You lose! All your ships are sunk.")
+            send_to_both_players(player_list, "Game over.")
+            break
+        
+
 
     #    - Notify both players of result
     #    - Check for win/loss
