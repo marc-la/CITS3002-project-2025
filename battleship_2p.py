@@ -52,20 +52,25 @@ def run_two_player_battleship_game(current_player: Player, other_player: Player,
     # 1. Initialise all players
     player_list = [current_player, other_player]
 
-    # Send welcome message
-    send_to_both_players(player_list, "Welcome to Battleship! Place your ships.")
-
     # 2. Place ships (random or manual)
+    current_player.send(f"Welcome to Battleship! You will be playing against {other_player.username}")
+    other_player.send(f"Welcome to Battleship! You will be playing against {current_player.username}")
+    other_player.send("Waiting for the other player to place ships...")
+
     for player in player_list:
         player.send("Would you like to place ships manually (M) or randomly (R)? [M/R]:")
         choice = player.get_next_input()
-        if choice is None:
-            player.send("No input received. Defaulting to random placement.")
+        if not choice or choice.strip().upper() not in ("M", "R"):
+            player.send("No valid input received. Defaulting to random placement.")
             choice = 'R'
-        if choice.upper() == 'M':
+        else:
+            choice = choice.strip().upper()
+
+        if choice == 'M':
             player.send("You chose manual placement.")
             player.board.place_ships_manually(SHIPS)
         else:
+            player.send("You chose random placement.")
             player.board.place_ships_randomly(SHIPS)
         player.send("Your ships have been placed.")
 
