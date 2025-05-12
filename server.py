@@ -89,8 +89,8 @@ def check_start_game():
         if len(waiting_lobby_queue) >= 2 and not game_ongoing_event.is_set():
             logging.info("Starting the game...")
             players = [waiting_lobby_queue.pop(0), waiting_lobby_queue.pop(0)]
-            player0 = Player(players[0], client_files[players[0]], player_inputs[0])
-            player1 = Player(players[1], client_files[players[1]], player_inputs[1])
+            player0 = Player(players[0], client_files[players[0]][0], player_inputs[0])
+            player1 = Player(players[1], client_files[players[1]][0], player_inputs[1])
             player0.send(f"[INFO] Game starting! You are player 1.\n")
             player1.send(f"[INFO] Game starting! You are player 2.\n")
             run_two_player_battleship_game(player0, player1, client_files)
