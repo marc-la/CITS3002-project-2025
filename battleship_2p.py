@@ -98,17 +98,16 @@ def send_to_both_players(players: list[Player], msg: str):
 
 # ----------------------------------------------------------------------------
 
-def run_two_player_battleship_game(players: list, client_files: dict):
+def run_two_player_battleship_game(current_player: Player, other_player: Player, client_files: dict):
     """
     Runs a two-player Battleship game.
 
-    @param players (list): A list of the 2 players in the game.
+    @param current_player (Player): The current player in the game.
+    @param other_player (Player): The other player in the game.
     @param client_files (dict): A dict in format username:(wfile,rfile).
     """
 
     # 1. Initialise all players
-    current_player = Player(players[0], client_files[players[0]])
-    other_player = Player(players[1], client_files[players[1]])
     player_list = [current_player, other_player]
 
     # 2. Place ships (random or manual)
@@ -131,7 +130,7 @@ def run_two_player_battleship_game(players: list, client_files: dict):
     send_to_both_players(player_list, "The game begins! Players will alternate turns firing at each other.")
     should_print_board_to_player = True
     while True:
-        # Check for disconnections
+        #    - Handle disconnections/timeouts
         if current_player.is_disconnected.is_set() or other_player.is_disconnected.is_set():
             send_to_both_players(player_list, "A player has disconnected. Game over.")
             break
@@ -159,13 +158,23 @@ def run_two_player_battleship_game(players: list, client_files: dict):
                 should_print_board_to_player = False
                 continue
         
-        # Check if the coordinate has already been guessed
-        result, was_sunk = other_player.board.fire_at(row, col)
+        #    - Notify both players of result
+        result, ship_was_sunk = other_player.board.fire_at(row, col)
         if result == "hit":
-            pass
-        else:
+            if ship_was_sunk:
+                current_player.send(f"Hit! You sunk a ship at {ship_was_sunk}.")
+                other_player.send(f"Your ship was sunk at {ship_was_sunk}.")
+            else:
+                current_player.send(f"Hit! You hit a ship at {guess}.")
+                other_player.send(f"Your ship was hit at {guess}.")
+        elif result == "miss":
+            current_player.send(f"Miss! You missed at {guess}.")
+            other_player.send(f"The opponent missed!")
+        elif result == "already_shot":
+            current_player.send(f"You already shot at {guess}. Try again.")
+            should_print_board_to_player = False
+            continue
 
-        
         #    - Check for win/loss
         if other_player.board.all_ships_sunk():
             current_player.send("You win! All opponent's ships are sunk.")
@@ -173,35 +182,35 @@ def run_two_player_battleship_game(players: list, client_files: dict):
             send_to_both_players(player_list, "Game over.")
             break
         
-
-
-    #    - Notify both players of result
-    #    - Check for win/loss
-    #    - Handle disconnections/timeouts
-    #    - Alternate turns
+        #    - Alternate turns
+        current_player, other_player = other_player, current_player
+        should_print_board_to_player = True
 
 # ----------------------------------------------------------------------------
 
 def main():
     import io
 
-    # Simulate input for both players (e.g., both choose random placement)
-    player1_input = io.StringIO("R\n")
-    player2_input = io.StringIO("ss\n")
+    # Simulate input for both players:
+    player1_moves = "R\nB2\nC3\nD4\n"
+    player2_moves = "R\nA1\nB1\nC1\n"
+
+    player1_input = io.StringIO(player1_moves)
+    player2_input = io.StringIO(player2_moves)
     player1_output = io.StringIO()
     player2_output = io.StringIO()
 
-    # Map usernames to (rfile, wfile)
-    players = ["Alice", "Bob"]
     client_files = {
         "Alice": (player1_input, player1_output),
         "Bob": (player2_input, player2_output)
     }
 
-    # Run the game setup (ship placement)
-    run_two_player_battleship_game(players, client_files)
+    # Create Player objects
+    player1 = Player("Alice", client_files["Alice"])
+    player2 = Player("Bob", client_files["Bob"])
 
-    # Print outputs to verify
+    run_two_player_battleship_game(player1, player2, client_files)
+
     print("Alice's output:")
     print(player1_output.getvalue())
     print("Bob's output:")
