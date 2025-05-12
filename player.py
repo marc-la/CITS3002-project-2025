@@ -27,6 +27,7 @@ class Player:
 
     def send(self, msg):
         try:
+            # print(msg, "HERE")
             self.wfile.write(msg + '\n')
             self.wfile.flush()
         except Exception as e:

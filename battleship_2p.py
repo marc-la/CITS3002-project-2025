@@ -3,66 +3,9 @@ import logging
 import threading
 from queue import Queue, Empty
 from config import *        # constants
+from player import Player
 
 # ----------------------------------------------------------------------------
-
-class Player:
-    """
-    Class player.
-
-    Represents a player in the Battleship game.
-
-    Attributes:
-        name (str): The name of the player.
-        rfile (file-like): The input stream for the player.
-        wfile (file-like): The output stream for the player.
-        board (Board): The player's board.
-        is_current_player (bool): Indicates if it's the player's turn.
-        is_disconnected (bool): Indicates if the player has disconnected.
-    """
-    def __init__(self, name, files):
-        self.name = name
-        self.rfile = files[0]                   # Input stream (file-like)
-        self.wfile = files[1]                   # Output stream (file-like)
-        self.board = Board(BOARD_SIZE)       # Player's board
-        self.is_disconnected = threading.Event()
-        self.input_queue = Queue()                  # Queue for incoming messages
-        self.listener_thread = threading.Thread(target=self.start_listener, daemon=True)
-        self.listener_thread.start()                # Start the listener thread
-
-    # Function to start the listener thread
-    def start_listener(self):
-        while True:
-            try:
-                input_line = self.receive()
-                self.input_queue.put(input_line)
-            except Exception as e:
-                self.is_disconnected.set()
-                logging.error(f"Error getting input for player {self.name}: {e}")
-                break
-
-    def send(self, msg: str):
-        try:
-            self.wfile.write(msg + '\n')
-            self.wfile.flush()
-        except Exception as e:
-            self.is_disconnected.set()
-            logging.error(f"Error sending message to player {self.name}: {e}")
-
-    def receive(self):
-        try:
-            return self.rfile.readline().strip()
-        except Exception as e:
-            self.is_disconnected.set()
-            return None
-
-    def get_next_input(self, timeout=TIMEOUT_SECONDS):
-        try:
-            return self.input_queue.get(timeout)
-        except Empty:
-            self.is_disconnected.set()
-            return None
-
 
 def display_board(player, opponent):
     """
