@@ -2,6 +2,9 @@ from battleship import *
 import logging
 import threading
 from queue import Queue, Empty
+from config import *        # constants
+
+# ----------------------------------------------------------------------------
 
 class Player:
     """
@@ -22,8 +25,7 @@ class Player:
         self.rfile = files[0]                   # Input stream (file-like)
         self.wfile = files[1]                   # Output stream (file-like)
         self.board = Board(BOARD_SIZE)       # Player's board
-        self.is_current_player = False
-        self.is_disconnected = False
+        self.is_disconnected = threading.Event()
         self.input_queue = Queue()                  # Queue for incoming messages
         self.listener_thread = threading.Thread(target=self.start_listener, daemon=True)
         self.listener_thread.start()                # Start the listener thread
@@ -34,8 +36,8 @@ class Player:
             try:
                 input_line = self.receive()
                 self.input_queue.put(input_line)
-            except Exception as e:    
-                self.is_disconnected = True
+            except Exception as e:
+                self.is_disconnected.set()
                 logging.error(f"Error getting input for player {self.name}: {e}")
                 break
 
@@ -44,21 +46,21 @@ class Player:
             self.wfile.write(msg + '\n')
             self.wfile.flush()
         except Exception as e:
-            self.is_disconnected = True
+            self.is_disconnected.set()
             logging.error(f"Error sending message to player {self.name}: {e}")
 
     def receive(self):
         try:
             return self.rfile.readline().strip()
         except Exception as e:
-            self.is_disconnected = True
-            return None       
+            self.is_disconnected.set()
+            return None
 
-    def get_next_input(self, timeout=None):
+    def get_next_input(self, timeout=TIMEOUT_SECONDS):
         try:
-            return self.input_queue.get(timeout=timeout)
+            return self.input_queue.get(timeout)
         except Empty:
-            self.is_disconnected = True
+            self.is_disconnected.set()
             return None
 
 
@@ -107,15 +109,13 @@ def run_two_player_battleship_game(players: list, client_files: dict):
     # 1. Initialise all players
     current_player = Player(players[0], client_files[players[0]])
     other_player = Player(players[1], client_files[players[1]])
-    current_player.is_current_player = True
-
     player_list = [current_player, other_player]
 
     # 2. Place ships (random or manual)
     for player in player_list:
         player.send("Welcome to Battleship! Place your ships.")
         player.send("Would you like to place ships manually (M) or randomly (R)? [M/R]:")
-        choice = player.get_next_input(timeout=60)
+        choice = player.get_next_input()
         if choice is None:
             player.send("No input received. Defaulting to random placement.")
             choice = 'R'
@@ -123,22 +123,43 @@ def run_two_player_battleship_game(players: list, client_files: dict):
             player.send("You chose manual placement.")
             player.board.place_ships_manually(SHIPS)
         else:
-            player.send("You chose random placement.")
             player.board.place_ships_randomly(SHIPS)
+        player.send("Your ships have been placed.")
 
 
     # 3. Main game loop
-    #    - Alternate turns
-    #    - Prompt for move, receive input
-    #    - Validate/process move, update boards
+    send_to_both_players(player_list, "The game begins! Players will alternate turns firing at each other.")
+    while True:
+        # Check for disconnections
+        if current_player.is_disconnected.is_set() or other_player.is_disconnected.is_set():
+            send_to_both_players(player_list, "A player has disconnected. Game over.")
+            break
+        
+        #    - Prompt for move, receive input
+        display_board(current_player, other_player)
+        current_player.send(f"Your Turn. Enter a coordinate to fire at (e.g., B5). You have {TIMEOUT_SECONDS} seconds:")
+        other_player.send("Waiting for the other player to take their turn...")
+
+        #    - Validate/process move, update boards
+        guess = current_player.get_next_input()
+        if not guess:
+            current_player.send("No input received. You lose and you will be disconnected. Goodbye.")
+            current_player.is_disconnected.set()
+            continue
+
+        try:
+            row, col = parse_coordinate(guess)
+            if row < 0 or row >= BOARD_SIZE or \
+                col < 0 or col >= BOARD_SIZE:
+                 raise ValueError("Coordinates out of bounds.")
+        except ValueError as e:
+                current_player.send(f"Invalid input: {e}. Try again.")
+                return False
+
     #    - Notify both players of result
     #    - Check for win/loss
     #    - Handle disconnections/timeouts
-    display_board(current_player, other_player) 
-    display_board(other_player, current_player) 
-    return
-
-
+    #    - Alternate turns
 
 # ----------------------------------------------------------------------------
 
@@ -147,7 +168,7 @@ def main():
 
     # Simulate input for both players (e.g., both choose random placement)
     player1_input = io.StringIO("R\n")
-    player2_input = io.StringIO("M\n")
+    player2_input = io.StringIO("ss\n")
     player1_output = io.StringIO()
     player2_output = io.StringIO()
 
