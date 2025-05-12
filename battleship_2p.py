@@ -29,7 +29,6 @@ def display_board(player, opponent):
             player.send(aligned_row)
         
         # Footer
-        player.send("")
         player.wfile.flush()
     except Exception as e:
         logging.error(f"Error displaying board to player {player}: {e}")
@@ -63,7 +62,7 @@ def run_two_player_battleship_game(current_player: Player, other_player: Player,
         if choice is None:
             player.send("No input received. Defaulting to random placement.")
             choice = 'R'
-        if choice == 'M':
+        if choice.upper() == 'M':
             player.send("You chose manual placement.")
             player.board.place_ships_manually(SHIPS)
         else:
