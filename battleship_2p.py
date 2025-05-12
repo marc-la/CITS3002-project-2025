@@ -57,7 +57,14 @@ def run_two_player_battleship_game(current_player: Player, other_player: Player,
     other_player.send(f"Welcome to Battleship! You will be playing against {current_player.username}")
     other_player.send("Waiting for the other player to place ships...")
 
-    for player in player_list:
+    for i, player in enumerate(player_list):
+        if i == 0:
+            player_list[0].is_current_player.set()
+            player_list[1].is_current_player.clear()
+        else:
+            player_list[0].is_current_player.clear()
+            player_list[1].is_current_player.set()
+
         player.send("Would you like to place ships manually (M) or randomly (R)? [M/R]:")
         choice = player.get_next_input()
         if not choice or choice.strip().upper() not in ("M", "R"):
@@ -74,9 +81,12 @@ def run_two_player_battleship_game(current_player: Player, other_player: Player,
             player.board.place_ships_randomly(SHIPS)
         player.send("Your ships have been placed.")
 
+    current_player.is_current_player.set()
+    other_player.is_current_player.clear()
 
     # 3. Main game loop
     send_to_both_players(player_list, "The game begins! Players will alternate turns firing at each other.")
+    display_board(other_player, current_player)
     should_print_board_to_player = True
     while True:
         #    - Handle disconnections/timeouts
@@ -134,6 +144,8 @@ def run_two_player_battleship_game(current_player: Player, other_player: Player,
         #    - Alternate turns
         current_player, other_player = other_player, current_player
         should_print_board_to_player = True
+        current_player.is_current_player.set()
+        other_player.is_current_player.clear()
 
 # ----------------------------------------------------------------------------
 

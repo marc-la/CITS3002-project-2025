@@ -10,18 +10,14 @@ import time
 
 client_files = {} # username as key, (wfile, rfile) as value
 client_conns = {} # username as key, (conn, addr) as value
-players = [None, None] # Store username of players
+player_info = {} # username as key, (input_queue, is_their_turn) as value
 waiting_lobby_queue = [] # Store usernames of spectators
 game_ongoing_event = Event()
-player_inputs = [Queue(), Queue()]  # Queues for player inputs
-
-def handle_disconnect(username):
-    pass
 
 def broadcast_message(message):
     pass
 
-def get_username_from_client(wfile, rfile, conn, addr):
+def init_client(wfile, rfile, conn, addr):
     """
     Continuously receive and display messages from the server.
     """
@@ -47,6 +43,7 @@ def get_username_from_client(wfile, rfile, conn, addr):
                     waiting_lobby_queue.append(line.strip())
                     client_files[line.strip()] = (wfile, rfile)
                     client_conns[line.strip()] = (conn, addr)
+                    player_info[line.strip()] = (Queue(), Event())
                     wfile.write(f"[INFO] Welcome {line.strip()}! You are now in the waiting lobby.\n")
                     wfile.flush()
                     return line.strip()
@@ -59,14 +56,14 @@ def receive_client_messages(conn, addr):
     wfile = conn.makefile('w')
     wfile.write("[INFO] Welcome to Battleship! \n")
     wfile.flush()
-    username = get_username_from_client(wfile, rfile, conn, addr)
+    username = init_client(wfile, rfile, conn, addr)
 
     # Every second, check for client input check for disconnect
     while True:
         ready, _, _ = select([rfile], [], [], 1)  
         if ready:
             line = rfile.readline()
-            if line.strip().lower() == "quit":
+            if line.strip().lower() in ["quit", "exit", "forfeit"]:
                 logging.info(f"Spectator {addr} disconnected or quit.")
                 break
             elif line == '\n': continue
@@ -75,31 +72,27 @@ def receive_client_messages(conn, addr):
                 break
             elif username in waiting_lobby_queue and line.strip().lower()[:4] == "CHAT":
                 broadcast_message(f"[{username}] {line[5:]}")
-            elif username in players:
-                player_inputs[players.index(username)].put(line.strip())
+            # only send to the player object if it is their turn
+            elif username in player_info and player_info[username][1].is_set():
+                player_info[username][0].put(line.strip())
 
 def check_start_game():
     """
     Check if the game can start.
     """
-    global players
+    global player_info
     while True: 
         time.sleep(1)  # Check every second
         if len(waiting_lobby_queue) >= 2 and not game_ongoing_event.is_set():
             logging.info("Starting the game...")
-            players = [waiting_lobby_queue.pop(0), waiting_lobby_queue.pop(0)]
-            player0 = Player(players[0], client_files[players[0]][0], player_inputs[0])
-            player1 = Player(players[1], client_files[players[1]][0], player_inputs[1])
+            username0 = waiting_lobby_queue.pop(0)
+            username1 = waiting_lobby_queue.pop(0)
+            player0 = Player(username0, client_files[username0][0], player_info[username0][0], player_info[username0][1])
+            player1 = Player(username1, client_files[username1][0], player_info[username1][0], player_info[username1][1])
             player0.send(f"[INFO] Game starting! You are player 1.")
             player1.send(f"[INFO] Game starting! You are player 2.")
             run_two_player_battleship_game(player0, player1, client_files)
             game_ongoing_event.clear()
-            del client_conns[players[0]]
-            del client_conns[players[1]]
-            del client_files[players[0]]
-            del client_files[players[1]]
-            players = [None, None]
-
             logging.info("Game ended. Waiting for new players...")
 
 def main():

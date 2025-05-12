@@ -18,12 +18,13 @@ class Player:
         is_current_player (bool): Indicates if it's the player's turn.
         is_disconnected (bool): Indicates if the player has disconnected.
     """
-    def __init__(self, username, wfile, input_queue):
+    def __init__(self, username, wfile, input_queue, is_current_player):
         self.username = username
         self.wfile = wfile                   # Output stream (file-like)
         self.board = Board(BOARD_SIZE)       # Player's board
         self.input_queue = input_queue       # Queue for incoming messages
         self.is_disconnected = Event()
+        self.is_current_player = is_current_player
 
     def send(self, msg):
         try:
@@ -36,7 +37,9 @@ class Player:
 
     def get_next_input(self, timeout=TIMEOUT_SECONDS):
         try:
-            return self.input_queue.get(timeout)
+            x = self.input_queue.get(timeout)
+            print(f"[INFO] Received input from {self.username}: {x}")
+            return x
         except Empty:
             self.is_disconnected.set()
             return None
