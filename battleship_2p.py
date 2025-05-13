@@ -1,7 +1,6 @@
 from battleship import *
 import logging
-import threading
-from queue import Queue, Empty
+import time
 from config import *        # constants
 from player import Player
 
@@ -38,9 +37,35 @@ def send_to_both_players(players: list[Player], msg: str):
     for player in players:
         player.send(msg)
 
+def broadcast_spectators(message, players, player0, player1):
+    for username, player in players.items():
+        if player.is_spectator.is_set() and not player.is_disconnected.is_set():
+            try:
+                if message == "GRID":
+                    # Header
+                    player.send(f"[{player0.username}]".ljust(32) + f"[{player1.username}]")
+                    col_header = ".  " + "".join(str(i + 1).ljust(2) for i in range(BOARD_SIZE))
+                    player.send(col_header.ljust(32) + col_header)
+
+                    # Rows
+                    for r in range(BOARD_SIZE):
+                        row_label = chr(ord('A') + r)
+                        guesses_row = " ".join(player0.board.hidden_grid[r])
+                        ships_row = " ".join(player1.board.hidden_grid[r])
+                        aligned_row = f"{row_label:2} {guesses_row}".ljust(32) + f"{row_label:2} {ships_row}"
+                        player.send(aligned_row)
+                    
+                    # Footer
+                    player.wfile.flush()
+                else:
+                    player.send(f"[INFO] {message}")
+            except Exception as e:
+                print("HERE")
+                logging.error(f"Error broadcasting message to {username}: {e}")
+
 # ----------------------------------------------------------------------------
 
-def run_two_player_battleship_game(player_list, client_files: dict):
+def run_two_player_battleship_game(players, player0, player1):
     """
     Runs a two-player Battleship game.
 
@@ -50,13 +75,16 @@ def run_two_player_battleship_game(player_list, client_files: dict):
     """
 
     # 1. Initialise all players
-    current_player, other_player = player_list[0], player_list[1]
-    
+    current_player, other_player = players[player0], players[player1]
+    player_list = [current_player, other_player]
+    broadcast_spectators(f"{current_player.username} and {other_player.username} are now playing!", players, players[player0], players[player1])
+
     # 2. Place ships (random or manual)
     current_player.send(f"Welcome to Battleship! You will be playing against {other_player.username}")
     other_player.send(f"Welcome to Battleship! You will be playing against {current_player.username}")
     other_player.send("Waiting for the other player to place ships...")
 
+    broadcast_spectators("Players are placing ships...", players, players[player0], players[player1])
     for i, player in enumerate(player_list):
         if i == 0:
             player_list[0].is_current_player.set()
@@ -86,14 +114,27 @@ def run_two_player_battleship_game(player_list, client_files: dict):
 
     # 3. Main game loop
     send_to_both_players(player_list, "The game begins! Players will alternate turns firing at each other.")
+    broadcast_spectators("The game begins! Players will alternate turns firing at each other.", players, players[player0], players[player1])
     display_board(other_player, current_player)
+    broadcast_spectators("GRID", players, players[player0], players[player1])
     should_print_board_to_player = True
     while True:
         #    - Handle disconnections/timeouts
-        if current_player.is_disconnected.is_set() or other_player.is_disconnected.is_set():
-            send_to_both_players(player_list, "A player has disconnected. Game over.")
-            break
-        
+        for player, opponent in [(current_player, other_player), (other_player, current_player)]:
+            if player.is_disconnected.is_set():
+                opponent.send("[INFO] Your opponent has disconnected. They will forfeit if they do not reconnect within 30 seconds.")
+                for _ in range(RECONNECT_TIMEOUT):
+                    time.sleep(1)
+                    if not player.is_disconnected.is_set():
+                        opponent.send("[INFO] Your opponent has reconnected. The game will resume.")
+                        break
+                    else:
+                        opponent.send("Your opponent has failed to reconnect. You win by default.")
+                        return
+                    
+        if current_player.is_disconnected.is_set() and other_player.is_disconnected.is_set():
+            broadcast_spectators("Both players have disconnected. The game will end.", players, players[player0], players[player1])
+            return
         #    - Prompt for move, receive input
         if should_print_board_to_player:
             display_board(current_player, other_player)
@@ -142,6 +183,7 @@ def run_two_player_battleship_game(player_list, client_files: dict):
             break
         
         #    - Alternate turns
+        broadcast_spectators("GRID", players, players[player0], players[player1])
         current_player, other_player = other_player, current_player
         should_print_board_to_player = True
         current_player.is_current_player.set()

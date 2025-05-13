@@ -13,14 +13,16 @@ class Player:
     Attributes:
         username (str): The username of the player.
         rfile (file-like): The input stream for the player.
-        wfile (file-like): The output stream for the player.
+        input_queue (Queue): Queue for ouput stream for the player.
         board (Board): The player's board.
-        is_current_player (bool): Indicates if it's the player's turn.
-        is_disconnected (bool): Indicates if the player has disconnected.
+        is_current_player (Event): Indicates if it's the player's turn.
+        is_disconnected (Event): Indicates if the player has disconnected.
+        is_spectator (Event): Indicates if the player is a spectator.
     """
-    def __init__(self, username, wfile):
+    def __init__(self, username, wfile, rfile):
         self.username = username
         self.wfile = wfile                   # Output stream (file-like)
+        self.rfile = rfile
         self.board = Board(BOARD_SIZE)       # Player's board
         self.input_queue = Queue()       # Queue for incoming messages
         self.is_disconnected = Event()

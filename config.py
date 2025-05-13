@@ -1,9 +1,10 @@
 # Variables
 HOST = "127.0.0.1"
-PORT = 5001
+PORT = 5000
 MAX_CONNECTIONS = 12
 INPUT_TIMEOUT = 30
-TIMEOUT_SECONDS = 15
+TIMEOUT_SECONDS = 120
+RECONNECT_TIMEOUT = 30
 
 import logging
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
