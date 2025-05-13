@@ -2,15 +2,13 @@
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 from threading import Thread, Event
 from config import *
-from select import select
 from battleship_2p import run_two_player_battleship_game
-from queue import Queue
 from player import Player
 import time
 
 client_files = {} # username as key, (wfile, rfile) as value
 client_conns = {} # username as key, (conn, addr) as value
-player_info = {} # username as key, (input_queue, is_their_turn) as value
+players = {} # username as key, Player object as value
 waiting_lobby_queue = [] # Store usernames of spectators
 game_ongoing_event = Event()
 
@@ -25,28 +23,25 @@ def init_client(wfile, rfile, conn, addr):
     wfile.flush()
     try:
         while True:
-            ready, _, _ = select([rfile], [], [], 1)  
-            if ready:
-                line = rfile.readline()
-                if line.strip().lower() == "quit":
-                    logging.info(f"Spectator {addr} disconnected or quit.")
-                    break
-                elif line == '\n': continue
-                elif line == '':
-                    logging.info(f"Client {addr} disconnected.")
-                    break
-                elif line.strip() in client_files:
-                    wfile.write(f"[ERROR] Username '{line.strip()}' is already taken. Please choose another one.\n")
-                    wfile.flush()
-                    continue
-                else:
-                    waiting_lobby_queue.append(line.strip())
-                    client_files[line.strip()] = (wfile, rfile)
-                    client_conns[line.strip()] = (conn, addr)
-                    player_info[line.strip()] = (Queue(), Event())
-                    wfile.write(f"[INFO] Welcome {line.strip()}! You are now in the waiting lobby.\n")
-                    wfile.flush()
-                    return line.strip()
+            line = rfile.readline()
+            if line.strip().lower() == "quit":
+                logging.info(f"Spectator {addr} disconnected or quit.")
+                break
+            elif line == '\n': continue
+            elif line == '':
+                logging.info(f"Client {addr} disconnected.")
+                break
+            elif line.strip() in client_files:
+                wfile.write(f"[ERROR] Username '{line.strip()}' is already taken. Please choose another one.\n")
+                wfile.flush()
+                continue
+            else:
+                waiting_lobby_queue.append(line.strip())
+                client_files[line.strip()] = (wfile, rfile)
+                client_conns[line.strip()] = (conn, addr)
+                wfile.write(f"[INFO] Welcome {line.strip()}! You are now in the waiting lobby.\n")
+                wfile.flush()
+                return line.strip()
     except Exception as e:
         logging.error(f"Error receiving messages: {e}")
 
@@ -60,38 +55,37 @@ def receive_client_messages(conn, addr):
 
     # Every second, check for client input check for disconnect
     while True:
-        ready, _, _ = select([rfile], [], [], 1)  
-        if ready:
-            line = rfile.readline()
-            if line.strip().lower() in ["quit", "exit", "forfeit"]:
-                logging.info(f"Spectator {addr} disconnected or quit.")
-                break
-            elif line == '\n': continue
-            elif line == '':
-                logging.info(f"Client {addr} disconnected.")
-                break
-            elif username in waiting_lobby_queue and line.strip().lower()[:4] == "CHAT":
-                broadcast_message(f"[{username}] {line[5:]}")
-            # only send to the player object if it is their turn
-            elif username in player_info and player_info[username][1].is_set():
-                player_info[username][0].put(line.strip())
+        line = rfile.readline()
+        if line.strip().lower() in ["quit", "exit", "forfeit"]:
+            logging.info(f"Spectator {addr} disconnected or quit.")
+            break
+        elif line == '\n': continue
+        elif line == '':
+            logging.info(f"Client {addr} disconnected.")
+            break
+        elif username in waiting_lobby_queue and line.strip().lower()[:4] == "CHAT":
+            broadcast_message(f"[{username}] {line[5:]}")
+        # only send to the player object if it is their turn
+        elif username in players and players[username].is_current_player.is_set():
+            players[username].input_queue.put(line.strip())
 
 def check_start_game():
     """
     Check if the game can start.
     """
-    global player_info
+    global players
     while True: 
         time.sleep(1)  # Check every second
         if len(waiting_lobby_queue) >= 2 and not game_ongoing_event.is_set():
             logging.info("Starting the game...")
-            username0 = waiting_lobby_queue.pop(0)
-            username1 = waiting_lobby_queue.pop(0)
-            player0 = Player(username0, client_files[username0][0], player_info[username0][0], player_info[username0][1])
-            player1 = Player(username1, client_files[username1][0], player_info[username1][0], player_info[username1][1])
-            player0.send(f"[INFO] Game starting! You are player 1.")
-            player1.send(f"[INFO] Game starting! You are player 2.")
-            run_two_player_battleship_game(player0, player1, client_files)
+            game_ongoing_event.set()
+            
+            for i in range(2):
+                username = waiting_lobby_queue.pop(0)
+                player = Player(username, client_files[username][0])
+                players[username] = player
+
+            run_two_player_battleship_game(list(players.values()), client_files)
             game_ongoing_event.clear()
             logging.info("Game ended. Waiting for new players...")
 

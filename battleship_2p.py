@@ -40,7 +40,7 @@ def send_to_both_players(players: list[Player], msg: str):
 
 # ----------------------------------------------------------------------------
 
-def run_two_player_battleship_game(current_player: Player, other_player: Player, client_files: dict):
+def run_two_player_battleship_game(player_list, client_files: dict):
     """
     Runs a two-player Battleship game.
 
@@ -50,8 +50,8 @@ def run_two_player_battleship_game(current_player: Player, other_player: Player,
     """
 
     # 1. Initialise all players
-    player_list = [current_player, other_player]
-
+    current_player, other_player = player_list[0], player_list[1]
+    
     # 2. Place ships (random or manual)
     current_player.send(f"Welcome to Battleship! You will be playing against {other_player.username}")
     other_player.send(f"Welcome to Battleship! You will be playing against {current_player.username}")

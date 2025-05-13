@@ -1,6 +1,6 @@
 from battleship import *
 import logging
-from queue import Empty
+from queue import Empty, Queue
 from threading import Event
 from config import * 
 
@@ -18,13 +18,14 @@ class Player:
         is_current_player (bool): Indicates if it's the player's turn.
         is_disconnected (bool): Indicates if the player has disconnected.
     """
-    def __init__(self, username, wfile, input_queue, is_current_player):
+    def __init__(self, username, wfile):
         self.username = username
         self.wfile = wfile                   # Output stream (file-like)
         self.board = Board(BOARD_SIZE)       # Player's board
-        self.input_queue = input_queue       # Queue for incoming messages
+        self.input_queue = Queue()       # Queue for incoming messages
         self.is_disconnected = Event()
-        self.is_current_player = is_current_player
+        self.is_current_player = Event()
+        self.is_spectator = Event()
 
     def send(self, msg):
         try:
@@ -35,11 +36,12 @@ class Player:
             self.is_disconnected.set()
             logging.error(f"Error sending message to player {self.username}: {e}")
 
-    def get_next_input(self, timeout=TIMEOUT_SECONDS):
+    def get_next_input(self):
         try:
-            x = self.input_queue.get(timeout)
+            x = self.input_queue.get(timeout=TIMEOUT_SECONDS)
             print(f"[INFO] Received input from {self.username}: {x}")
             return x
         except Empty:
+            print(f"[INFO] {self.username} timed out waiting for input.")
             self.is_disconnected.set()
             return None
