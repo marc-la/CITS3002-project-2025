@@ -37,14 +37,12 @@ def send_to_both_players(players: list[Player], msg: str):
     for player in players:
         player.send(msg)
 
-def broadcast_spectators(message, players, player0, player1):
+def broadcast_spectators(message, players, player0, player1, outcome=None, guess=None):
     for username, player in players.items():
         if player.is_spectator.is_set() and not player.is_disconnected.is_set():
             try:
-                print(f"Broadcasting to {username}")  # Debugging statement
                 if message == "GRID":
                     # Header
-                    print(f"Sending grid header to {username}")  # Debugging statement
                     player.send(f"[{player0.username}]".ljust(32) + f"[{player1.username}]")
                     col_header = ".  " + "".join(str(i + 1).ljust(2) for i in range(BOARD_SIZE))
                     player.send(col_header.ljust(32) + col_header)
@@ -58,7 +56,8 @@ def broadcast_spectators(message, players, player0, player1):
                         player.send(aligned_row)
                     
                     # Footer
-                    player.wfile.flush()
+                    if outcome and guess:
+                        player.send(f"[INFO] {player0.username} fired at {guess} and {outcome}.")
                 else:
                     player.send(f"[INFO] {message}")
             except Exception as e:
@@ -197,7 +196,7 @@ def run_two_player_battleship_game(players, player0, player1):
             break
         
         #    - Alternate turns
-        broadcast_spectators("GRID", players, players[player0], players[player1])
+        broadcast_spectators("GRID", players, players[player0], players[player1], result, guess)
         current_player, other_player = other_player, current_player
         should_print_board_to_player = True
         current_player.is_current_player.set()
