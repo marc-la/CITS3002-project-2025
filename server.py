@@ -20,14 +20,15 @@ def send_player_message(message, source_username):
         except Exception as e:
             logging.error(f"Error broadcasting message to {username}: {e}")
 
-def send_waiting_lobby_update():
+def send_waiting_lobby_update(message):
     """
     Broadcast a message to all spectators.
     """
     for username, player in players.items():
         if player.is_spectator.is_set() and not player.is_disconnected.is_set():
             try:
-                message = f"[INFO] You are currently in position {waiting_lobby_queue.index(username) + 1} in the waiting lobby."
+                if message == "UPDATE":
+                    message = f"[INFO] You are currently in position {waiting_lobby_queue.index(username) + 1} in the waiting lobby."
                 player.wfile.write(message + '\n')
                 player.wfile.flush()
             except Exception as e:
@@ -78,7 +79,7 @@ def init_client(conn, addr):
                 players[username] = Player(username, wfile, rfile)
                 players[username].is_spectator.set()
                 wfile.write(f"[INFO] Welcome {username}! You are now in the waiting lobby.\n")
-                send_waiting_lobby_update()
+                players[username].send(f"[INFO] You are currently in position {waiting_lobby_queue.index(username) + 1} in the waiting lobby.")
                 wfile.flush()
                 return username
     except Exception as e:
@@ -102,7 +103,7 @@ def receive_client_messages(conn, addr):
                 players[username].is_disconnected.set()
                 if username in waiting_lobby_queue:
                     waiting_lobby_queue.remove(username)
-                    send_waiting_lobby_update()
+                    send_waiting_lobby_update("UPDATE")
                 break
             elif username in waiting_lobby_queue and line.strip().upper()[:4] == "CHAT":
                 send_player_message(line[5:], username)
@@ -120,7 +121,7 @@ def check_start_game():
     global currently_playing
     while True: 
         time.sleep(1)  # Check every second
-        print(currently_playing, waiting_lobby_queue, players.keys())
+        # print(currently_playing, waiting_lobby_queue, players.keys())
         if len(waiting_lobby_queue) >= 2 and not game_ongoing_event.is_set():
             logging.info("Starting the game...")
             game_ongoing_event.set()
@@ -128,7 +129,8 @@ def check_start_game():
 
             for username in currently_playing:
                 players[username].is_spectator.clear()
-            send_waiting_lobby_update()
+            send_waiting_lobby_update(f"[INFO] Game is starting in 5 seconds... {players[username].username} vs {players[username].username}")
+            send_waiting_lobby_update("UPDATE")
     
             run_two_player_battleship_game(players, currently_playing[0], currently_playing[1])
 

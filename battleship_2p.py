@@ -63,6 +63,10 @@ def broadcast_spectators(message, players, player0, player1):
                     player.send(f"[INFO] {message}")
             except Exception as e:
                 logging.error(f"Error broadcasting message to {username}: {e}")
+
+def check_disconnected(current_player, other_player):
+    """possible thread implementation of checking for disconnections"""
+    pass
 # ----------------------------------------------------------------------------
 
 def run_two_player_battleship_game(players, player0, player1):
@@ -78,7 +82,6 @@ def run_two_player_battleship_game(players, player0, player1):
     current_player, other_player = players[player0], players[player1]
     player_list = [current_player, other_player]
     strikes = {player0: 0, player1: 0}
-    broadcast_spectators(f"{current_player.username} and {other_player.username} are now playing!", players, players[player0], players[player1])
 
     # 2. Place ships (random or manual)
     current_player.send(f"Welcome to Battleship! You will be playing against {other_player.username}")
