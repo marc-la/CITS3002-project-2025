@@ -41,8 +41,10 @@ def broadcast_spectators(message, players, player0, player1):
     for username, player in players.items():
         if player.is_spectator.is_set() and not player.is_disconnected.is_set():
             try:
+                print(f"Broadcasting to {username}")  # Debugging statement
                 if message == "GRID":
                     # Header
+                    print(f"Sending grid header to {username}")  # Debugging statement
                     player.send(f"[{player0.username}]".ljust(32) + f"[{player1.username}]")
                     col_header = ".  " + "".join(str(i + 1).ljust(2) for i in range(BOARD_SIZE))
                     player.send(col_header.ljust(32) + col_header)
@@ -60,23 +62,22 @@ def broadcast_spectators(message, players, player0, player1):
                 else:
                     player.send(f"[INFO] {message}")
             except Exception as e:
-                print("HERE")
                 logging.error(f"Error broadcasting message to {username}: {e}")
-
 # ----------------------------------------------------------------------------
 
 def run_two_player_battleship_game(players, player0, player1):
     """
     Runs a two-player Battleship game.
 
-    @param current_player (Player): The current player in the game.
-    @param other_player (Player): The other player in the game.
-    @param client_files (dict): A dict in format username:(wfile,rfile).
+    @param players (dict): A dict of players in the game, where the key is the username and the value is a Player object.
+    @param player0 (str): The username of the first player.
+    @param player1 (str): The username of the second player.
     """
 
     # 1. Initialise all players
     current_player, other_player = players[player0], players[player1]
     player_list = [current_player, other_player]
+    strikes = {player0: 0, player1: 0}
     broadcast_spectators(f"{current_player.username} and {other_player.username} are now playing!", players, players[player0], players[player1])
 
     # 2. Place ships (random or manual)
@@ -128,24 +129,34 @@ def run_two_player_battleship_game(players, player0, player1):
                     if not player.is_disconnected.is_set():
                         opponent.send("[INFO] Your opponent has reconnected. The game will resume.")
                         break
-                    else:
-                        opponent.send("Your opponent has failed to reconnect. You win by default.")
-                        return
+                if player.is_disconnected.is_set():
+                    opponent.send("Your opponent has failed to reconnect. You win by default.")
+                    return
                     
         if current_player.is_disconnected.is_set() and other_player.is_disconnected.is_set():
             broadcast_spectators("Both players have disconnected. The game will end.", players, players[player0], players[player1])
             return
+        
         #    - Prompt for move, receive input
         if should_print_board_to_player:
             display_board(current_player, other_player)
             current_player.send(f"Your Turn. Enter a coordinate to fire at (e.g., B5). You have {TIMEOUT_SECONDS} seconds:")
-            other_player.send("Waiting for the other player to take their turn...")
+            other_player.send("Waiting for your opponent to take their turn...")
 
         #    - Validate/process move, update boards
         guess = current_player.get_next_input()
         if not guess:
-            current_player.send("No input received. You lose and you will be disconnected. Goodbye.")
-            current_player.is_disconnected.set()
+            strikes[current_player.username] += 1
+            if strikes[current_player.username] >= 3:
+                current_player.send("You have timed out too many times. You lose by default.")
+                other_player.send("Your opponent has timed out too many times. You win by default.")
+                current_player.is_disconnected.set()
+                return
+            current_player.send(f"Timeout! Your turn is skipped. You have {3 - strikes[current_player.username]} timeouts left.")
+            current_player, other_player = other_player, current_player
+            should_print_board_to_player = True
+            current_player.is_current_player.set()
+            other_player.is_current_player.clear()
             continue
 
         try:

@@ -78,6 +78,7 @@ def init_client(conn, addr):
                 players[username] = Player(username, wfile, rfile)
                 players[username].is_spectator.set()
                 wfile.write(f"[INFO] Welcome {username}! You are now in the waiting lobby.\n")
+                send_waiting_lobby_update()
                 wfile.flush()
                 return username
     except Exception as e:
@@ -89,26 +90,28 @@ def receive_client_messages(conn, addr):
     if not username: return
 
     # Pre-process input before sending to battleship game
-    while True:
-        line = players[username].rfile.readline()
-        # print(waiting_lobby_queue, line, line.strip().lower()[:4], username)
-        if line.strip().lower() in ["quit", "exit", "forfeit"]:
-            logging.info(f"Spectator {addr} disconnected or quit.")
-            break
-        elif line == '\n': continue
-        elif line == '':
-            logging.info(f"{username} disconnected.")
-            players[username].is_disconnected.set()
-            if username in currently_playing:
+    try:
+        while True:
+            line = players[username].rfile.readline()
+            if line.strip().lower() in ["quit", "exit", "forfeit"]:
+                logging.info(f"Spectator {addr} disconnected or quit.")
+                break
+            elif line == '\n': continue
+            elif line == '':
+                logging.info(f"{username} disconnected.")
+                players[username].is_disconnected.set()
                 if username in waiting_lobby_queue:
                     waiting_lobby_queue.remove(username)
                     send_waiting_lobby_update()
-            break
-        elif username in waiting_lobby_queue and line.strip().upper()[:4] == "CHAT":
-            send_player_message(line[5:], username)
-        # only send to the player object if it is their turn
-        elif username in players and players[username].is_current_player.is_set():
-            players[username].input_queue.put(line.strip())
+                break
+            elif username in waiting_lobby_queue and line.strip().upper()[:4] == "CHAT":
+                send_player_message(line[5:], username)
+            # only send to the player object if it is their turn
+            elif username in players and players[username].is_current_player.is_set():
+                players[username].input_queue.put(line.strip())
+    except Exception as e:
+        logging.error(f"Error receiving messages from {username}: {e}")
+        players[username].is_disconnected.set()
 
 def check_start_game():
     """
@@ -117,22 +120,25 @@ def check_start_game():
     global currently_playing
     while True: 
         time.sleep(1)  # Check every second
+        print(currently_playing, waiting_lobby_queue, players.keys())
         if len(waiting_lobby_queue) >= 2 and not game_ongoing_event.is_set():
             logging.info("Starting the game...")
             game_ongoing_event.set()
             currently_playing = [waiting_lobby_queue.pop(0), waiting_lobby_queue.pop(0)]
-            send_waiting_lobby_update()
 
             for username in currently_playing:
                 players[username].is_spectator.clear()
+            send_waiting_lobby_update()
     
             run_two_player_battleship_game(players, currently_playing[0], currently_playing[1])
 
             for username in currently_playing:
-                players[username].is_current_player.clear()
-                players[username].is_spectator.set()
-                players[username].wfile.write(f"[INFO] Game over! You can rejoin the waiting lobby.\n")
-                players[username].wfile.flush()
+                if not players[username].is_disconnected.is_set():
+                    players[username].is_current_player.clear()
+                    players[username].is_spectator.set()
+                    players[username].wfile.write(f"[INFO] Game over! You are back in the waiting lobby.\n")
+                    players[username].wfile.flush()
+                    waiting_lobby_queue.append(username)
 
             currently_playing = []
             game_ongoing_event.clear()

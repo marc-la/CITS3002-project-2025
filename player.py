@@ -45,5 +45,4 @@ class Player:
             return x
         except Empty:
             print(f"[INFO] {self.username} timed out waiting for input.")
-            self.is_disconnected.set()
             return None
