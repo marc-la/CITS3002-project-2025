@@ -32,8 +32,7 @@ def send_waiting_lobby_update(message):
             try:
                 if message == "UPDATE":
                     message = f"[INFO] You are currently in position {waiting_lobby_queue.index(username) + 1} in the waiting lobby."
-                player.wfile.write(message + '\n')
-                player.wfile.flush()
+                player.send(message)
             except Exception as e:
                 logging.error(f"Error broadcasting message to {username}: {e}")
 
@@ -44,16 +43,13 @@ def handle_reconnect(username, wfile, rfile):
     players[username].is_disconnected.clear()
     players[username].wfile = wfile
     players[username].rfile = rfile
-    players[username].wfile.write(f"[INFO] Welcome back {username}!\n")
-    players[username].wfile.flush()
+    players[username].send(f"[INFO] Welcome back {username}!")
     if username in currently_playing:
-        players[username].wfile.write(f"[INFO] You have been reconnected to the ongoing game!\n")
-        players[username].wfile.flush()
+        players[username].send(f"[INFO] You have been reconnected to the ongoing game!")
     else:
         waiting_lobby_queue.append(username)
         players[username].is_spectator.set()
-        players[username].wfile.write(f"[INFO] You are now in the waiting lobby.\n")
-        players[username].wfile.flush()
+        players[username].send(f"[INFO] You are now in the waiting lobby.")
     logging.info(f"Player {username} reconnected to current game.")
 
 def init_client(conn, addr):
