@@ -13,6 +13,7 @@ class Player:
     Attributes:
         username (str): The username of the player.
         rfile (file-like): The input stream for the player.
+        wfile (file-like): The output stream for the player.
         input_queue (Queue): Queue for ouput stream for the player.
         board (Board): The player's board.
         is_current_player (Event): Indicates if it's the player's turn.
@@ -21,17 +22,16 @@ class Player:
     """
     def __init__(self, username, wfile, rfile):
         self.username = username
-        self.wfile = wfile                   # Output stream (file-like)
+        self.wfile = wfile
         self.rfile = rfile
-        self.board = Board(BOARD_SIZE)       # Player's board
-        self.input_queue = Queue()       # Queue for incoming messages
+        self.board = Board(BOARD_SIZE)
+        self.input_queue = Queue()
         self.is_disconnected = Event()
         self.is_current_player = Event()
         self.is_spectator = Event()
 
     def send(self, msg):
         try:
-            # print(msg, "HERE")
             self.wfile.write(msg + '\n')
             self.wfile.flush()
         except Exception as e:
@@ -40,9 +40,9 @@ class Player:
 
     def get_next_input(self):
         try:
-            x = self.input_queue.get(timeout=TIMEOUT_SECONDS)
-            print(f"[INFO] Received input from {self.username}: {x}")
-            return x
+            input = self.input_queue.get(timeout=TIMEOUT_SECONDS)
+            logging.info(f"Received input from {self.username}: {input}")
+            return input
         except Empty:
-            print(f"[INFO] {self.username} timed out waiting for input.")
+            logging.info(f"{self.username} timed out waiting for input.")
             return None

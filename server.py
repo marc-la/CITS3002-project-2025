@@ -6,19 +6,22 @@ from battleship_2p import run_two_player_battleship_game
 from player import Player
 import time
 
-players = {} # username as key, Player object as value
-currently_playing = [] # Store usernames of players
-waiting_lobby_queue = [] # Store usernames of spectators
-game_ongoing_event = Event()
+players = {}                    # username as key, Player object as value
+currently_playing = []          # Store usernames of players
+waiting_lobby_queue = []        # Store usernames of spectators
+game_ongoing_event = Event()    # Event to indicate if a game is ongoing
 
-def send_player_message(message, source_username):
-    print(f"[CHAT ({source_username})] {message.strip()}")
+def send_chat_message(message, source_username):
+    """
+    Broadcast a chat message to all players except the source.
+    """
+    logging.info(f"{source_username} IM: {message.strip()}")
     for username, player in players.items():
-        if username in currently_playing or username == source_username or player.is_disconnected.is_set(): continue
-        try:
-            player.send(f"[CHAT] [{source_username}] {message.strip()}")
-        except Exception as e:
-            logging.error(f"Error broadcasting message to {username}: {e}")
+        if username != source_username and not player.is_disconnected.is_set():
+            try:
+                player.send(f"[CHAT] [{source_username}] {message.strip()}")
+            except Exception as e:
+                logging.error(f"Error broadcasting message to {username}: {e}")
 
 def send_waiting_lobby_update(message):
     """
@@ -35,7 +38,9 @@ def send_waiting_lobby_update(message):
                 logging.error(f"Error broadcasting message to {username}: {e}")
 
 def handle_reconnect(username, wfile, rfile):
-    # Check if user has previously disconnected
+    """
+    Handle reconnection of a player.
+    """
     players[username].is_disconnected.clear()
     players[username].wfile = wfile
     players[username].rfile = rfile
@@ -94,11 +99,14 @@ def init_client(conn, addr):
                 players[username].send(f"[INFO] Welcome {username}! You are now in the waiting lobby.")
                 players[username].send(f"[INFO] You are currently in position {waiting_lobby_queue.index(username) + 1} in the waiting lobby.")
                 return username
+            
     except Exception as e:
         logging.error(f"Error receiving messages: {e}")
 
 def receive_client_messages(conn, addr):
-    """Thread function to receive messages from a client."""
+    """
+    Thread function to receive messages from a client.
+    """
     username = init_client(conn, addr)
     if not username: return
 
@@ -115,7 +123,7 @@ def receive_client_messages(conn, addr):
             elif line == '\n': continue
             # Check for CHAT command
             elif username in waiting_lobby_queue and line.strip().upper()[:4] == "CHAT":
-                send_player_message(line[5:], username)
+                send_chat_message(line[5:], username)
             # Check if user has diconnected
             elif line == '':
                 logging.info(f"{username} disconnected.")
