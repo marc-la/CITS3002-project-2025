@@ -26,9 +26,7 @@ def display_board(player, opponent):
             ships_row = " ".join(player.board.hidden_grid[r])
             aligned_row = f"{row_label:2} {guesses_row}".ljust(32) + f"{row_label:2} {ships_row}"
             player.send(aligned_row)
-        
-        # Footer
-        player.wfile.flush()
+
     except Exception as e:
         logging.error(f"Error displaying board to player {player}: {e}")
 

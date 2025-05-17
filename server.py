@@ -81,7 +81,7 @@ def init_client(conn, addr):
                     handle_reconnect(username, conn)
                     return username
                 else:
-                    send_packets(f"[ERROR] Username '{username}' is already taken. Please choose another one.\n", conn)
+                    send_packets(f"[ERROR] Username '{username}' is already taken. Please choose another one.", conn)
                     continue
             # Finally, if username is not taken, initialize the new player
             else:
