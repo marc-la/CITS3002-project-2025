@@ -4,6 +4,7 @@ from threading import Thread, Event
 from config import *
 from battleship_2p import run_two_player_battleship_game
 from player import Player
+from protocol import receive_packets, send_packets
 import time
 
 players = {}                    # username as key, Player object as value
@@ -36,13 +37,12 @@ def send_waiting_lobby_update(message):
             except Exception as e:
                 logging.error(f"Error broadcasting message to {username}: {e}")
 
-def handle_reconnect(username, wfile, rfile):
+def handle_reconnect(username, conn):
     """
     Handle reconnection of a player.
     """
     players[username].is_disconnected.clear()
-    players[username].wfile = wfile
-    players[username].rfile = rfile
+    players[username].conn = conn
     players[username].send(f"[INFO] Welcome back {username}!")
     if username in currently_playing:
         players[username].send(f"[INFO] You have been reconnected to the ongoing game!")
@@ -57,15 +57,12 @@ def init_client(conn, addr):
     initialize a client connection, either create a new Player object or reconnect to an existing one.
     Either returns the username or None if the user disconnected.
     """
-    rfile = conn.makefile('r')
-    wfile = conn.makefile('w')
-    wfile.write("[INFO] Welcome to the Battleship game! \n")
-    wfile.write("[INFO] Please enter your username or type 'quit' to leave: \n")
-    wfile.flush()
+    send_packets("[INFO] Welcome to the Battleship game!", conn)
+    send_packets("[INFO] Please enter your username or type 'quit' to leave:", conn)
 
     try:
         while True:
-            line = rfile.readline()
+            line = receive_packets(conn)
             # Check for enter key
             if line == '\n': continue
             username = line.strip()
@@ -81,16 +78,15 @@ def init_client(conn, addr):
             # Check if username is already taken
             elif username in players:
                 if players[username].is_disconnected.is_set():
-                    handle_reconnect(username, wfile, rfile)
+                    handle_reconnect(username, conn)
                     return username
                 else:
-                    wfile.write(f"[ERROR] Username '{username}' is already taken. Please choose another one.\n")
-                    wfile.flush()
+                    send_packets(f"[ERROR] Username '{username}' is already taken. Please choose another one.\n", conn)
                     continue
             # Finally, if username is not taken, initialize the new player
             else:
                 waiting_lobby_queue.append(username)
-                players[username] = Player(username, wfile, rfile)
+                players[username] = Player(username, conn)
                 players[username].is_spectator.set()
                 players[username].send(f"[INFO] Welcome {username}! You are now in the waiting lobby.")
                 players[username].send(f"[INFO] You are currently in position {waiting_lobby_queue.index(username) + 1} in the waiting lobby.")
@@ -109,7 +105,8 @@ def receive_client_messages(conn, addr):
     # Pre-process input before sending to battleship game
     try:
         while True:
-            line = players[username].rfile.readline()
+            line = receive_packets(conn)
+            logging.info(f"Received message from {username}: {line.strip()}")
 
             # Check if user wants to quit
             if line.strip().lower() in ["quit", "exit", "forfeit"]:
@@ -172,8 +169,7 @@ def check_start_game():
                 if not players[username].is_disconnected.is_set():
                     players[username].is_current_player.clear()
                     players[username].is_spectator.set()
-                    players[username].wfile.write(f"[INFO] Game over! You are back in the waiting lobby.\n")
-                    players[username].wfile.flush()
+                    players[username].send(f"[INFO] Game over! You are back in the waiting lobby.\n")
                     waiting_lobby_queue.append(username)
             currently_playing = []
             game_ongoing_event.clear()

@@ -17,7 +17,7 @@ def build_packet(seq: int, pkt_type: int, payload: bytes) -> bytes:
     full_packet = struct.pack(PACKET_FORMAT, seq, pkt_type, cs) + payload
     return full_packet
 
-def send(message: str, conn: socket.socket):
+def send_packets(message: str, conn: socket.socket, debug=False):
     message_bytes = message.encode('utf-8')
     packets = []
     seq = 0
@@ -39,7 +39,8 @@ def send(message: str, conn: socket.socket):
         for i, pkt in enumerate(packets):
             if i not in acks:
                 conn.send(pkt)
-                print(f"[send] Sent packet {i}")
+                if debug:
+                    print(f"[send] Sent packet {i}")
 
         try:
             conn.settimeout(1.0)
@@ -48,53 +49,72 @@ def send(message: str, conn: socket.socket):
 
             if ack_type == PACKET_TYPE_ACK:
                 acks.add(ack_seq)
-                print(f"[send] Received ACK for packet {ack_seq}")
+                if debug:
+                    print(f"[send] Received ACK for packet {ack_seq}")
             elif ack_type == PACKET_TYPE_NACK:
-                print(f"Retransmit requested for packet {ack_seq}")
+                if debug:
+                    print(f"Retransmit requested for packet {ack_seq}")
         except socket.timeout:
-            print("Timeout, resending unacknowledged packets...")
+            if debug:
+                print("Timeout, resending unacknowledged packets...")
             
     # Send final acknowledgment to indicate all packets were received
     final_ack = build_packet(seq + 1, PACKET_TYPE_ACK, b'')
     conn.send(final_ack)
-    print("[send] Sent final acknowledgment to server.")
+    if debug:
+        print("[send] Sent final acknowledgment to server.")
 
-def receive(conn: socket.socket) -> str:
+def receive_packets(conn: socket.socket, debug=False) -> str:
     received_packets = {}
     expected_seq = 0
 
     while True:
         try:
             packet = conn.recv(1024)
+            if not packet:
+                if debug:
+                    print("[receive] Connection closed by peer.")
+                break
+
             seq, pkt_type, cs = struct.unpack(PACKET_FORMAT, packet[:5])
             payload = packet[5:]
 
             # Verify checksum
             header = struct.pack('!H B', seq, pkt_type)
             if checksum(header + payload) != cs:
-                print(f"Checksum failed for packet {seq}")
+                if debug:
+                    print(f"Checksum failed for packet {seq}")
                 nack = build_packet(seq, PACKET_TYPE_NACK, b'')
                 conn.send(nack)
-                print(f"[receive] Sent NACK for packet {seq}")
+                if debug:
+                    print(f"[receive] Sent NACK for packet {seq}")
                 continue
 
             if pkt_type == PACKET_TYPE_DATA:
                 received_packets[seq] = payload
                 ack = build_packet(seq, PACKET_TYPE_ACK, b'')
                 conn.send(ack)
-                print(f"[receive] Sent ACK for packet {seq}")
+                if debug:
+                    print(f"[receive] Sent ACK for packet {seq}")
 
             elif pkt_type == PACKET_TYPE_END:
                 conn.send(build_packet(seq, PACKET_TYPE_ACK, b''))
-                conn.send(ack)
-                print(f"[receive] Sent ACK for END packet {seq}")
+                if debug:
+                    print(f"[receive] Sent ACK for END packet {seq}")
 
             elif pkt_type == PACKET_TYPE_ACK:
-                print("[receive] Final acknowledgment received. Closing connection.")
-                break
+                if debug:
+                    print("[receive] Final acknowledgment received. Closing connection.")
+                # Only break if we've received at least one data packet or END
+                if received_packets:
+                    break
         except socket.timeout:
             continue
 
+    if not received_packets:
+        if debug:
+            print("[receive] No data packets received.")
+        return ""
     # Reorder packets by sequence number
     ordered = [received_packets[i] for i in sorted(received_packets.keys())]
     full_data = b''.join(ordered)
@@ -126,7 +146,7 @@ def test_protocol():
             conn, addr = s.accept()
             with conn:
                 print(f"[Server] Connected by {addr}")
-                received = receive(conn)
+                received = receive_packets(conn)
                 print(f"[Server] Received message:\n{received}\n")
 
     # Client function
@@ -135,7 +155,7 @@ def test_protocol():
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((HOST, PORT))
             print("[Client] Sending message...")
-            send(test_message, s)
+            send_packets(test_message, s, debug=True)
             print("[Client] Message sent.")
             
 
