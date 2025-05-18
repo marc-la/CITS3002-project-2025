@@ -3,19 +3,19 @@ from sys import stdin
 from socket import socket, AF_INET, SOCK_STREAM
 from threading import Event, Thread
 from config import *
-from protocol import send_packets, receive_packets
+from protocol import send_message, receive_message
 import logging
 
 logging.basicConfig(
-    level=logging.INFO,  # Hide debug messages
-    format='[%(levelname)s] %(message)s'
+    level=logging.INFO,
+    format='[CLIENT] %(level)%: %(message)s'
 )
 
 game_over_event = Event()
 
 def receive_server_messages(conn):
     while not game_over_event.is_set():
-        line = receive_packets(conn)
+        line = receive_message(conn).decode('utf-8')
         if not line:
             logging.info("Server disconnected.")
             break
@@ -30,7 +30,7 @@ def main():
         try:
             while True:
                 user_input = stdin.readline()
-                send_packets(user_input, conn)
+                send_message(conn, user_input.encode('utf-8'))
                 if user_input.lower() in ['quit', 'exit', 'forfeit']:
                     game_over_event.set()
                     logging.info("Exiting...")

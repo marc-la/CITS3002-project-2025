@@ -4,18 +4,16 @@ from threading import Thread, Event
 from config import *
 from battleship_2p import run_two_player_battleship_game
 from player import Player
-from protocol import receive_packets, send_packets
+from protocol import send_message, receive_message
 import time
 import logging
 
+# Set up logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Show debug messages
-    format='[%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler("server_debug.log"),  # Write to a file
-        logging.StreamHandler()                   # And to stderr
-    ]
+    level=logging.INFO,
+    format='[SERVER] %(level)%: %(message)s'
 )
+
 
 players = {}                    # username as key, Player object as value
 currently_playing = []          # Store usernames of players
@@ -67,12 +65,12 @@ def init_client(conn, addr):
     initialize a client connection, either create a new Player object or reconnect to an existing one.
     Either returns the username or None if the user disconnected.
     """
-    send_packets("[INFO] Welcome to the Battleship game!", conn)
-    send_packets("[INFO] Please enter your username or type 'quit' to leave:", conn)
+    send_message(conn, "[INFO] Welcome to the Battleship game!".encode('utf-8'))
+    send_message(conn, "[INFO] Please enter your username or type 'quit' to leave:".encode('utf-8'))
 
     try:
         while True:
-            line = receive_packets(conn)
+            line = receive_message(conn).decode('utf-8')
             # Check for enter key
             if line == '\n': continue
             username = line.strip()
@@ -91,7 +89,7 @@ def init_client(conn, addr):
                     handle_reconnect(username, conn)
                     return username
                 else:
-                    send_packets(f"[ERROR] Username '{username}' is already taken. Please choose another one.", conn)
+                    send_message(conn, f"[ERROR] Username '{username}' is already taken. Please choose another one.".encode('utf-8'))
                     continue
             # Finally, if username is not taken, initialize the new player
             else:
@@ -115,7 +113,7 @@ def receive_client_messages(conn, addr):
     # Pre-process input before sending to battleship game
     try:
         while True:
-            line = receive_packets(conn)
+            line = receive_message(conn).decode('utf-8')
             logging.info(f"Received message from {username}: {line.strip()}")
 
             # Check if user wants to quit

@@ -3,7 +3,7 @@ import logging
 from queue import Empty, Queue
 from threading import Event
 from config import *
-from protocol import send_packets
+from protocol import send_message
 
 class Player:
     """
@@ -31,7 +31,7 @@ class Player:
 
     def send(self, msg):
         try:
-            send_packets(msg, self.conn)
+            send_message(self.conn, msg.encode('utf-8'))
         except Exception as e:
             self.is_disconnected.set()
             logging.error(f"Error sending message to player {self.username}: {e}")
