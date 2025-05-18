@@ -16,13 +16,14 @@ if not logger.hasHandlers():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-game_over_event = Event()
+exit_condition = Event()
 
 def receive_server_messages(conn):
-    while not game_over_event.is_set():
+    while not exit_condition.is_set():
         line = receive_message(conn).decode('utf-8')
         if not line:
             logger.info("Server disconnected.")
+            exit_condition.set()
             break
         print(line)
 
@@ -33,18 +34,19 @@ def main():
         receiver_thread = Thread(target=receive_server_messages, args=(conn,), daemon=True)
         receiver_thread.start()
         try:
-            while True:
+            while not exit_condition.is_set():
                 user_input = stdin.readline()
                 send_message(conn, user_input.encode('utf-8'))
                 if user_input.lower() in ['quit', 'exit', 'forfeit']:
-                    game_over_event.set()
+                    exit_condition.set()
                     logger.info("Exiting...")
+                    exit_condition.set()
                     break
                 elif user_input == "":
                     continue
         except KeyboardInterrupt:
             logger.info("Client exiting due to keyboard interrupt.")
-            game_over_event.set()
+            exit_condition.set()
 
 if __name__ == "__main__":
     main()
