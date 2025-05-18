@@ -1,13 +1,56 @@
 import struct
 import socket
-import time  # Add time import for timing
+import time
+from config import DEBUG
+from enum import IntEnum
+
+# ----------- Protocol Constants -------------------
 
 MAX_PAYLOAD = 32
-PACKET_FORMAT = "!H B H"  # SEQ (2 bytes), TYPE (1 byte), CHECKSUM (2 bytes)
-PACKET_TYPE_DATA = 0x01
-PACKET_TYPE_ACK = 0x02
-PACKET_TYPE_NACK = 0x03
-PACKET_TYPE_END = 0x04
+PACKET_FORMAT = "!H B H H"  # SEQ (2 bytes), TYPE (1 byte), CHECKSUM (2 bytes), LENGTH (2 bytes)
+HEADER_SIZE = struct.calcsize(PACKET_FORMAT)  # Should be 7 bytes
+
+
+# ----------- Protocol Objects  -------------------
+
+class Packet:
+    """
+    Class Packet.
+
+    Represents a packet with a sequence number, type, and payload.
+
+    Attributes:
+        seq (int): Sequence number of the packet.
+        pkt_type (int): Type of the packet (data, ack, etc.).
+        payload (bytes): Payload data of the packet.
+    """
+    def __init__(self, seq, pkt_type, payload):
+        self.seq = seq
+        self.pkt_type = pkt_type
+        self.payload = payload
+
+    def to_bytes(self):
+        header = struct.pack('!H B', self.seq, self.pkt_type)
+        cs = checksum(header + self.payload)
+        length = len(self.payload)
+        return struct.pack(PACKET_FORMAT, self.seq, self.pkt_type, cs, length) + self.payload
+
+    @staticmethod
+    def from_bytes(data):
+        seq, pkt_type, cs, length = struct.unpack(PACKET_FORMAT, data[:HEADER_SIZE])
+        payload = data[HEADER_SIZE:HEADER_SIZE+length]
+        header = struct.pack('!H B', seq, pkt_type)
+        if checksum(header + payload) != cs:
+            raise ValueError("Checksum failed")
+        return Packet(seq, pkt_type, payload)
+
+class PacketType(IntEnum):
+    DATA = 0x01
+    ACK = 0x02
+    NACK = 0x03
+    END = 0x04
+
+# ---------- Protocol Functions -------------------
 
 def checksum(data: bytes) -> int:
     return sum(data) % 65536
@@ -15,110 +58,116 @@ def checksum(data: bytes) -> int:
 def build_packet(seq: int, pkt_type: int, payload: bytes) -> bytes:
     header = struct.pack('!H B', seq, pkt_type)
     cs = checksum(header + payload)
-    full_packet = struct.pack(PACKET_FORMAT, seq, pkt_type, cs) + payload
+    length = len(payload)
+    full_packet = struct.pack(PACKET_FORMAT, seq, pkt_type, cs, length) + payload
     return full_packet
 
-def send_packets(message: str, conn: socket.socket, debug=False):
+def send_packets(message: str, conn: socket.socket, debug=DEBUG):
     message_bytes = message.encode('utf-8')
     packets = []
     seq = 0
-    
+
     # Split message into multiple packets
     for i in range(0, len(message_bytes), MAX_PAYLOAD):
         chunk = message_bytes[i:i+MAX_PAYLOAD]
-        packet = build_packet(seq, PACKET_TYPE_DATA, chunk)
+        packet = Packet(seq, PacketType.DATA, chunk)
         packets.append(packet)
         seq += 1
 
     # Add END packet to mark end of message
-    end_packet = build_packet(seq, PACKET_TYPE_END, b'')
+    end_packet = Packet(seq, PacketType.END, b'')
     packets.append(end_packet)
 
     acks = set()
-    start_time = time.time() if debug else None  # Start timing
+    start_time = time.time() if debug else None
     while len(acks) < len(packets):
         for i, pkt in enumerate(packets):
             if i not in acks:
-                conn.send(pkt)
+                conn.send(pkt.to_bytes())
                 if debug:
                     elapsed = time.time() - start_time
                     print(f"[send][{elapsed:.3f}s] Sent packet {i}")
 
         try:
-            conn.settimeout(1.0)
+            conn.settimeout(0.1)
             ack_data = conn.recv(1024)
-            ack_seq, ack_type, _, = struct.unpack('!H B H', ack_data[:5])
-
-            if ack_type == PACKET_TYPE_ACK:
-                acks.add(ack_seq)
-                if debug:
-                    elapsed = time.time() - start_time
-                    print(f"[send][{elapsed:.3f}s] Received ACK for packet {ack_seq}")
-            elif ack_type == PACKET_TYPE_NACK:
-                if debug:
-                    elapsed = time.time() - start_time
-                    print(f"[send][{elapsed:.3f}s] Retransmit requested for packet {ack_seq}")
+            offset = 0
+            while offset + HEADER_SIZE <= len(ack_data):
+                try:
+                    ack_pkt = Packet.from_bytes(ack_data[offset:offset+HEADER_SIZE])
+                except Exception:
+                    break
+                if ack_pkt.pkt_type == PacketType.ACK:
+                    acks.add(ack_pkt.seq)
+                    if debug:
+                        elapsed = time.time() - start_time
+                        print(f"[send][{elapsed:.3f}s] Received ACK for packet {ack_pkt.seq}")
+                elif ack_pkt.pkt_type == PacketType.NACK:
+                    if debug:
+                        elapsed = time.time() - start_time
+                        print(f"[send][{elapsed:.3f}s] Retransmit requested for packet {ack_pkt.seq}")
+                offset += HEADER_SIZE
         except socket.timeout:
             if debug:
                 elapsed = time.time() - start_time
                 print(f"[send][{elapsed:.3f}s] Timeout, resending unacknowledged packets...")
-                
+
     # Send final acknowledgment to indicate all packets were received
-    final_ack = build_packet(seq + 1, PACKET_TYPE_ACK, b'')
-    conn.send(final_ack)
+    final_ack = Packet(seq + 1, PacketType.ACK, b'')
+    conn.send(final_ack.to_bytes())
     if debug:
         elapsed = time.time() - start_time
         print(f"[send][{elapsed:.3f}s] Sent final acknowledgment to server.")
         print(f"[send] Total time elapsed: {elapsed:.3f}s")
 
-def receive_packets(conn: socket.socket, debug=False) -> str:
+def recv_all(conn, n):
+    data = b''
+    while len(data) < n:
+        chunk = conn.recv(n - len(data))
+        if not chunk:
+            raise ConnectionError("Socket closed")
+        data += chunk
+    return data
+
+def receive_packets(conn: socket.socket, debug=DEBUG) -> str:
     received_packets = {}
-    expected_seq = 0
-    start_time = time.time() if debug else None  # Start timing
+    start_time = time.time() if debug else None
     while True:
         try:
-            packet = conn.recv(1024)
-            if not packet:
-                if debug:
-                    elapsed = time.time() - start_time
-                    print(f"[receive][{elapsed:.3f}s] Connection closed by peer.")
-                break
-
-            seq, pkt_type, cs = struct.unpack(PACKET_FORMAT, packet[:5])
-            payload = packet[5:]
-
-            # Verify checksum
-            header = struct.pack('!H B', seq, pkt_type)
-            if checksum(header + payload) != cs:
+            header = recv_all(conn, HEADER_SIZE)
+            seq, pkt_type, cs, length = struct.unpack(PACKET_FORMAT, header)
+            payload = recv_all(conn, length) if length > 0 else b''
+            try:
+                pkt = Packet.from_bytes(header + payload)
+            except ValueError:
                 if debug:
                     elapsed = time.time() - start_time
                     print(f"[receive][{elapsed:.3f}s] Checksum failed for packet {seq}")
-                nack = build_packet(seq, PACKET_TYPE_NACK, b'')
-                conn.send(nack)
+                nack = Packet(seq, PacketType.NACK, b'')
+                conn.send(nack.to_bytes())
                 if debug:
                     elapsed = time.time() - start_time
                     print(f"[receive][{elapsed:.3f}s] Sent NACK for packet {seq}")
                 continue
 
-            if pkt_type == PACKET_TYPE_DATA:
-                received_packets[seq] = payload
-                ack = build_packet(seq, PACKET_TYPE_ACK, b'')
-                conn.send(ack)
+            if pkt.pkt_type == PacketType.DATA:
+                received_packets[pkt.seq] = pkt.payload
+                ack = Packet(pkt.seq, PacketType.ACK, b'')
+                conn.send(ack.to_bytes())
                 if debug:
                     elapsed = time.time() - start_time
-                    print(f"[receive][{elapsed:.3f}s] Sent ACK for packet {seq}")
+                    print(f"[receive][{elapsed:.3f}s] Sent ACK for packet {pkt.seq}")
 
-            elif pkt_type == PACKET_TYPE_END:
-                conn.send(build_packet(seq, PACKET_TYPE_ACK, b''))
+            elif pkt.pkt_type == PacketType.END:
+                conn.send(Packet(pkt.seq, PacketType.ACK, b'').to_bytes())
                 if debug:
                     elapsed = time.time() - start_time
-                    print(f"[receive][{elapsed:.3f}s] Sent ACK for END packet {seq}")
+                    print(f"[receive][{elapsed:.3f}s] Sent ACK for END packet {pkt.seq}")
 
-            elif pkt_type == PACKET_TYPE_ACK:
+            elif pkt.pkt_type == PacketType.ACK:
                 if debug:
                     elapsed = time.time() - start_time
                     print(f"[receive][{elapsed:.3f}s] Final acknowledgment received. Closing connection.")
-                # Only break if we've received at least one data packet or END
                 if received_packets:
                     break
         except socket.timeout:
@@ -129,63 +178,9 @@ def receive_packets(conn: socket.socket, debug=False) -> str:
             elapsed = time.time() - start_time
             print(f"[receive][{elapsed:.3f}s] No data packets received.")
         return ""
-    # Reorder packets by sequence number
     ordered = [received_packets[i] for i in sorted(received_packets.keys())]
     full_data = b''.join(ordered)
     if debug:
         elapsed = time.time() - start_time
         print(f"[receive] Total time elapsed: {elapsed:.3f}s")
     return full_data.decode('utf-8')
-
-import threading
-import time
-
-def test_protocol():
-    import socket
-
-    HOST = '127.0.0.1'
-    PORT = 9999
-
-    # Message to send
-    test_message = (
-        "Hello, this is a test message to check the protocol implementation. "
-        "It should be split into multiple packets and sent over the socket. "
-        "The server should receive it correctly and reassemble it. "
-        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
-    )
-
-    # Server function (runs in a thread)
-    def run_server():
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((HOST, PORT))
-            s.listen(1)
-            print("[Server] Waiting for connection...")
-            conn, addr = s.accept()
-            with conn:
-                print(f"[Server] Connected by {addr}")
-                received = receive_packets(conn)
-                print(f"[Server] Received message:\n{received}\n")
-
-    # Client function
-    def run_client():
-        time.sleep(1)  # Wait for server to start
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((HOST, PORT))
-            print("[Client] Sending message...")
-            send_packets(test_message, s, debug=True)
-            print("[Client] Message sent.")
-            
-
-    # Run server in a background thread
-    server_thread = threading.Thread(target=run_server, daemon=True)
-    server_thread.start()
-
-    # Run client
-    run_client()
-
-    # Wait for server to finish
-    server_thread.join(timeout=5)
-
-# Run the test when script is run directly
-if __name__ == "__main__":
-    test_protocol()
