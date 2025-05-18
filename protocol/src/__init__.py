@@ -19,12 +19,4 @@ T4.1 Custom Low-Level Protocol with Checksum
 
 NOTE: Some of you have asked about whether task 4.1 in the project means to replace TCP with the custom one.
 If that is something you think you could do, then you can do so. However, it is sufficient to implement the required features on top of TCP for demonstration purposes (i.e., handling the custom packets and error detection, etc.).
-
----
-
-T4.3 Encryption Layer
-- Implement a basic symmetric encryption scheme for your protocol, e.g. AES in CTR mode, or a simplified approach with a shared secret key.
-- Define how you exchange keys (if at all) or assume an out-of-band channel.
-- Show how you incorporate encryption into your custom packet structure from T4.1 (e.g., encrypting the payload, or each packet’s data, ensuring you still can verify checksums or use an integrity-protected encryption scheme).
-- Report how you handle replay attacks, partial packet corruption, or IV generation (if using a block cipher).
 """

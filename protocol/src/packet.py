@@ -8,6 +8,50 @@ import struct
 from enum import Enum
 from .checksum import compute_checksum, verify_checksum
 from .errors import ChecksumError, SequenceError
+from ..crypto import encrypt_payload, decrypt_payload, generate_iv
+
+# ------------------- Async Logging Setup ------------------------------
+
+# 1. Create a shared, thread‑safe queue
+_log_queue = Queue()  # unlimited size by default
+
+# 2. Configure protocol logger to enqueue
+_queue_handler = QueueHandler(_log_queue)
+
+# 3. Create real handlers (file, console, etc.)
+_file_handler = logging.FileHandler("protocol.log", mode="w", encoding="utf-8")
+_file_handler.setLevel(logging.DEBUG)
+_formatter = logging.Formatter(
+    "%(asctime)s %(threadName)s %(name)s %(levelname)s %(message)s"
+)
+_file_handler.setFormatter(_formatter)
+
+# 4. Start listener thread
+_listener = QueueListener(
+    _log_queue,
+    _file_handler,
+    respect_handler_level=True
+)
+_listener.start()  # spins off background thread
+
+# Provide a clean shutdown hook
+def shutdown_logging():
+    """
+    Stop the listener thread and flush all handlers.
+    Call this at application exit to ensure all logs are written.
+    """
+    _listener.stop()
+    for handler in (_file_handler,):
+        try:
+            handler.flush()
+            handler.close()
+        except Exception:
+            pass
+
+_logger = logging.getLogger("protocol.src.packet")
+_logger.setLevel(logging.DEBUG)
+_logger.addHandler(_queue_handler)
+_logger.propagate = False  # Prevent propagation to root logger
 
 # -------------------  Packet Definition  ------------------------------
 
@@ -41,20 +85,29 @@ class Packet:
 
         self.seq_num = seq_num
         self.packet_type = packet_type
-        self.length = len(payload)
-        self.payload = payload
-        self.checksum = compute_checksum(payload)
+
+        if packet_type == PacketType.DATA and payload:
+            self.iv = generate_iv()
+            _logger.debug(f"[INIT] Plaintext before encryption (seq={seq_num}): {payload[:32]!r}")
+            encrypted_payload = encrypt_payload(payload, self.iv)
+            self.payload = self.iv + encrypted_payload
+            _logger.debug(f"[INIT] Encrypted payload (seq={seq_num}): {self.payload[:32]!r}")
+            self.plaintext = payload
+        else:
+            self.iv = None
+            self.payload = payload
+            self.plaintext = payload
+
+        self.length = len(self.payload)
+        self.checksum = compute_checksum(self.payload)
 
         _logger.debug(
             f"Packet created: seq_num={seq_num}, type={packet_type.name}, "
             f"length={len(payload)}, checksum={self.checksum}, "
-            f"payload_preview={payload[:32]!r}{'...' if len(payload) > 32 else ''}"
+            f"payload_preview={self.payload[:32]!r}{'...' if len(self.payload) > 32 else ''}"
         )
 
     def pack(self) -> bytes:
-        """
-        Serialize header fields and payload.
-        """
         header = struct.pack(
             HEADER_FMT,
             self.seq_num,
@@ -66,9 +119,6 @@ class Packet:
 
     @classmethod
     def unpack(cls, raw: bytes) -> "Packet":
-        """
-        Parse raw bytes into Packet, verify checksum.
-        """
         if len(raw) < HEADER_SIZE:
             raise ValueError("Raw data too short for header")
 
@@ -88,52 +138,20 @@ class Packet:
         if not verify_checksum(payload, recv_checksum):
             raise ChecksumError(f"Bad checksum on seq {seq_num}")
 
-        return cls(seq_num, packet_type, payload)
-
-# ------------------- Async Logging Setup ------------------------------
-
-# 1. Create a shared, thread‑safe queue
-_log_queue = Queue()  # unlimited size by default
-
-# 2. Configure protocol logger to enqueue
-_queue_handler = QueueHandler(_log_queue)
-_protocol_logger = logging.getLogger("protocol.src.packet")
-_protocol_logger.setLevel(logging.DEBUG)
-_protocol_logger.addHandler(_queue_handler)
-
-# 3. Create real handlers (file, console, etc.)
-_file_handler = logging.FileHandler("protocol.log", mode="w", encoding="utf-8")
-_file_handler.setLevel(logging.DEBUG)
-_formatter = logging.Formatter(
-    "%(asctime)s %(threadName)s %(name)s %(levelname)s %(message)s"
-)
-_file_handler.setFormatter(_formatter)
-
-# 4. Start listener thread
-_listener = QueueListener(
-    _log_queue,
-    _file_handler,
-    respect_handler_level=True
-)
-_listener.start()  # spins off background thread
-
-# Provide a clean shutdown hook
-def shutdown_logging():
-    """
-    Stop the listener thread and flush all handlers.
-    Call this at application exit to ensure all logs are written.
-    """
-    _listener.stop()
-    for handler in (_file_handler,):
-        try:
-            handler.flush()
-            handler.close()
-        except Exception:
-            pass
+        if packet_type == PacketType.DATA and length > 16:
+            iv = payload[:16]
+            encrypted = payload[16:]
+            decrypted = decrypt_payload(encrypted, iv)
+            _logger.debug(f"[UNPACK] Decrypted payload (seq={seq_num}): {decrypted[:32]!r}")
+            pkt = cls(seq_num, packet_type, decrypted)
+            pkt.iv = iv
+            pkt.payload = payload  # still store original iv + ciphertext
+            pkt.plaintext = decrypted  # store decrypted version
+            return pkt
+        else:
+            return cls(seq_num, packet_type, payload)
 
 # ---------====---- Transport helpers with fragmentation and reassembly ---------------
-
-_logger = logging.getLogger("protocol.src.packet")
 
 def send_message(sock: socket.socket, message: bytes) -> None:
     """
@@ -190,7 +208,7 @@ def receive_message(sock: socket.socket) -> bytes:
         if pkt.seq_num != expected_seq:
             raise SequenceError(f"Expected seq={expected_seq}, got={pkt.seq_num}")
 
-        buffers[pkt.seq_num] = pkt.payload
+        buffers[pkt.seq_num] = pkt.plaintext
         expected_seq = (expected_seq + 1) & 0xFFFF
 
     return b"".join(buffers[i] for i in range(expected_seq))
