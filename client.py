@@ -5,6 +5,7 @@ from threading import Event, Thread
 from config import *
 from protocol import send_message, receive_message
 import logging
+import argparse
 
 logger = logging.getLogger("client")
 logger.setLevel(logging.INFO)
@@ -27,9 +28,13 @@ def receive_server_messages(conn):
         print(line)
 
 def main():
+    parser = argparse.ArgumentParser(description="Client for the game server.")
+    parser.add_argument('-p', '--port', type=int, default=PORT, help='Port to connect to (default from config.py)')
+    args = parser.parse_args()
+
     with socket(AF_INET, SOCK_STREAM) as conn:
-        conn.connect((HOST, PORT))
-        print(f"Connected to server at {HOST}:{PORT}")
+        conn.connect((HOST, args.port))
+        print(f"Connected to server at {HOST}:{args.port}")
         receiver_thread = Thread(target=receive_server_messages, args=(conn,), daemon=True)
         receiver_thread.start()
         try:
