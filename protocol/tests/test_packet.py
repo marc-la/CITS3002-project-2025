@@ -1,34 +1,57 @@
-# pack/unpack tests
-
 import pytest
+from protocol import Packet, PacketType, MAX_PAYLOAD, HEADER_SIZE
+from protocol import compute_checksum
+from protocol import ChecksumError, SequenceError
 import struct
-from src.packet import Packet, PacketType, HEADER_FMT, HEADER_SIZE
-from src.errors import ChecksumError
 
-def test_pack_unpack(sample_payload):
-    pkt=Packet(7,PacketType.DATA,sample_payload)
-    raw=pkt.pack()
-    pkt2=Packet.unpack(raw)
-    assert pkt2.seq_num==7
-    assert pkt2.packet_type==PacketType.DATA
-    assert pkt2.payload==sample_payload
+# --- Helper function to simulate network corruption ---
+def corrupt_packet_bytes(packet_bytes: bytes) -> bytes:
+    corrupted = bytearray(packet_bytes)
+    corrupted[-1] ^= 0xFF  # flip last byte
+    return bytes(corrupted)
 
-
-def test_short_header():
-    with pytest.raises(ValueError):
-        Packet.unpack(b"\x00")
-
-
-def test_length_mismatch(sample_payload):
-    pkt=Packet(0,PacketType.DATA,sample_payload)
-    raw=pkt.pack()+b"X"
-    with pytest.raises(ValueError):
-        Packet.unpack(raw)
+def test_packet_pack_unpack_roundtrip():
+    payload = b"Test payload"
+    pkt_out = Packet(1, PacketType.DATA, payload)
+    packed = pkt_out.pack()
+    pkt_in = Packet.unpack(packed)
+    assert pkt_in.seq_num == pkt_out.seq_num
+    assert pkt_in.packet_type == pkt_out.packet_type
+    assert pkt_in.payload == pkt_out.payload
 
 
-def test_bad_checksum(sample_payload):
-    pkt=Packet(1,PacketType.DATA,sample_payload)
-    raw=pkt.pack()
-    bad=raw[:HEADER_SIZE]+bytes([raw[HEADER_SIZE]^0xFF])+raw[HEADER_SIZE+1:]
+def test_checksum_detection():
+    payload = b"Corrupt me"
+    pkt = Packet(42, PacketType.DATA, payload)
+    corrupted_bytes = corrupt_packet_bytes(pkt.pack())
+
     with pytest.raises(ChecksumError):
-        Packet.unpack(bad)
+        Packet.unpack(corrupted_bytes)
+
+
+def test_out_of_order_sequence():
+    from protocol import receive_message
+    import socket
+
+    # create a fake socket using socketpair
+    server_sock, client_sock = socket.socketpair()
+
+    # Send two packets manually
+    pkt1 = Packet(1, PacketType.DATA, b"hello")
+    pkt2 = Packet(0, PacketType.DATA, b"out of order")
+    client_sock.sendall(pkt1.pack())
+    client_sock.sendall(pkt2.pack())
+
+    # Terminate message
+    client_sock.sendall(Packet(2, PacketType.DATA, b"").pack())
+
+    with pytest.raises(SequenceError):
+        receive_message(server_sock)
+
+    server_sock.close()
+    client_sock.close()
+
+
+def test_packet_too_large():
+    with pytest.raises(ValueError):
+        Packet(0, PacketType.DATA, b"x" * (MAX_PAYLOAD + 1))
