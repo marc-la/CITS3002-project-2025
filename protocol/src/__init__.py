@@ -13,4 +13,8 @@ T4.1 Custom Low-Level Protocol with Checksum
     o How you generate and verify checksums.
     o What your protocol does with corrupted or out-of-sequence packets.
     o Statistical demonstration (optional but recommended): E.g., artificially inject errors or scramble bits, measure how many packets get flagged as corrupted.
-"""
+
+NOTE: Some of you have asked about whether task 4.1 in the project means to replace TCP with the custom one. 
+
+If that is something you think you could do, then you can do so. However, it is sufficient to implement the required features on top of TCP for demonstration purposes (i.e., handling the custom packets and error detection, etc.).
+""" 

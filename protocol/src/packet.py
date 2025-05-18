@@ -87,7 +87,7 @@ class Packet:
 # ------------------- Async Logging Setup ------------------------------
 
 # 1. Create a shared, thread‑safe queue
-_log_queue = Queue()  # unlimited size by default :contentReference[oaicite:4]{index=4}
+_log_queue = Queue()  # unlimited size by default
 
 # 2. Configure root logger to enqueue
 _queue_handler = QueueHandler(_log_queue)
@@ -111,7 +111,7 @@ _listener = QueueListener(
     _console_handler,
     respect_handler_level=True
 )
-_listener.start()  # spins off background thread :contentReference[oaicite:5]{index=5}
+_listener.start()  # spins off background thread
 
 # Provide a clean shutdown hook
 def shutdown_logging():
@@ -137,12 +137,12 @@ def send_message(sock: socket.socket, message: bytes) -> None:
     while offset < len(message):
         chunk = message[offset:offset + MAX_PAYLOAD]
         pkt = Packet(seq, PacketType.DATA, chunk)
-        _logger.debug(f"TX seq={pkt.seq_num} len={pkt.length}")
+        _logger.debug(f"Sending DATA packet: sequence={pkt.seq_num}, payload_size={pkt.length} bytes")
         sock.sendall(pkt.pack())
         offset += len(chunk)
         seq = (seq + 1) % (2**16)
     terminator = Packet(seq, PacketType.DATA, b"")
-    _logger.debug("TX terminator") 
+    _logger.debug(f"Sending end-of-message marker (sequence={terminator.seq_num})")
     sock.sendall(terminator.pack())
 
 
@@ -161,22 +161,22 @@ def receive_message(sock: socket.socket) -> bytes:
         seq_num, pkt_type_val, length, checksum = struct.unpack(HEADER_FMT, hdr)
         payload = sock.recv(length) if length else b""
 
-        _logger.debug(f"RX hdr seq={seq_num} len={length}")
+        _logger.debug(f"Received packet header: sequence={seq_num}, payload_length={length} bytes")
 
         if pkt_type_val == PacketType.NACK.value:
-            _logger.info(f"Got NACK for seq={seq_num}")
+            _logger.info(f"Received NACK for packet {seq_num}; will retransmit that sequence")
             continue  # don’t treat as terminator
 
         # DATA terminator
         if pkt_type_val == PacketType.DATA.value and length == 0:
-            _logger.debug("RX terminator")
+            _logger.debug(f"Received end-of-message marker (sequence={seq_num}); reassembly complete")
             break
 
         # Normal DATA packet
         try:
             pkt = Packet.unpack(hdr + payload)
         except ChecksumError:
-            _logger.warning(f"Bad checksum on seq={seq_num}, sending NACK")
+            _logger.warning(f"Payload corruption detected in packet {seq_num}; issuing NACK to request retransmission")
             sock.sendall(Packet(seq_num, PacketType.NACK, b"").pack())
             continue
 
