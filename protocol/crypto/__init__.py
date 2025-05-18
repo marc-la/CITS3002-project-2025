@@ -15,3 +15,6 @@ FOR REPORT:
 - Replay attacks mitigated via unique IV per packet (e.g. derived from sequence).
 - Corruption handled via checksum + retransmission.
 """
+
+from .aes import encrypt_payload, decrypt_payload
+from .key import generate_iv
