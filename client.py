@@ -3,38 +3,47 @@ from sys import stdin
 from socket import socket, AF_INET, SOCK_STREAM
 from threading import Event, Thread
 from config import *
+from protocol import send_message, receive_message
+import logging
+
+logger = logging.getLogger("client")
+logger.setLevel(logging.INFO)
+
+# Add a handler with formatting only if not already present
+if not logger.hasHandlers():
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('[%(levelname)s] %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 game_over_event = Event()
 
-def receive_server_messages(rfile):
+def receive_server_messages(conn):
     while not game_over_event.is_set():
-        line = rfile.readline().strip()
+        line = receive_message(conn).decode('utf-8')
         if not line:
-            logging.info("Server disconnected.")
+            logger.info("Server disconnected.")
             break
         print(line)
 
 def main():
-    with socket(AF_INET, SOCK_STREAM) as s:
-        s.connect((HOST, PORT))
+    with socket(AF_INET, SOCK_STREAM) as conn:
+        conn.connect((HOST, PORT))
         print(f"Connected to server at {HOST}:{PORT}")
-        rfile = s.makefile('r')
-        wfile = s.makefile('w')
-        receiver_thread = Thread(target=receive_server_messages, args=(rfile,), daemon=True)
+        receiver_thread = Thread(target=receive_server_messages, args=(conn,), daemon=True)
         receiver_thread.start()
         try:
             while True:
                 user_input = stdin.readline()
-                wfile.write(user_input)
-                wfile.flush()
+                send_message(conn, user_input.encode('utf-8'))
                 if user_input.lower() in ['quit', 'exit', 'forfeit']:
                     game_over_event.set()
-                    logging.info("Exiting...")
+                    logger.info("Exiting...")
                     break
                 elif user_input == "":
                     continue
         except KeyboardInterrupt:
-            logging.info("Client exiting due to keyboard interrupt.")
+            logger.info("Client exiting due to keyboard interrupt.")
             game_over_event.set()
 
 if __name__ == "__main__":

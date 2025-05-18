@@ -4,7 +4,20 @@ from threading import Thread, Event
 from config import *
 from battleship_2p import run_two_player_battleship_game
 from player import Player
+from protocol import send_message, receive_message
 import time
+import logging
+
+logger = logging.getLogger("server")
+logger.setLevel(logging.INFO)
+
+# Add a handler with formatting only if not already present
+if not logger.hasHandlers():
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('[%(levelname)s] %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
 
 players = {}                    # username as key, Player object as value
 currently_playing = []          # Store usernames of players
@@ -15,13 +28,13 @@ def send_chat_message(message, source_username):
     """
     Broadcast a chat message to all players except the source.
     """
-    logging.info(f"{source_username} IM: {message.strip()}")
+    logger.info(f"{source_username} IM: {message.strip()}")
     for username, player in players.items():
         if username != source_username and not player.is_disconnected.is_set():
             try:
                 player.send(f"[CHAT] [{source_username}] {message.strip()}")
             except Exception as e:
-                logging.error(f"Error broadcasting message to {username}: {e}")
+                logger.error(f"Error broadcasting message to {username}: {e}")
 
 def send_waiting_lobby_update(message):
     """
@@ -34,15 +47,14 @@ def send_waiting_lobby_update(message):
                     message = f"[INFO] You are currently in position {waiting_lobby_queue.index(username) + 1} in the waiting lobby."
                 player.send(message)
             except Exception as e:
-                logging.error(f"Error broadcasting message to {username}: {e}")
+                logger.error(f"Error broadcasting message to {username}: {e}")
 
-def handle_reconnect(username, wfile, rfile):
+def handle_reconnect(username, conn):
     """
     Handle reconnection of a player.
     """
     players[username].is_disconnected.clear()
-    players[username].wfile = wfile
-    players[username].rfile = rfile
+    players[username].conn = conn
     players[username].send(f"[INFO] Welcome back {username}!")
     if username in currently_playing:
         players[username].send(f"[INFO] You have been reconnected to the ongoing game!")
@@ -50,54 +62,50 @@ def handle_reconnect(username, wfile, rfile):
         waiting_lobby_queue.append(username)
         players[username].is_spectator.set()
         players[username].send(f"[INFO] You are now in the waiting lobby.")
-    logging.info(f"Player {username} reconnected to current game.")
+    logger.info(f"Player {username} reconnected to current game.")
 
 def init_client(conn, addr):
     """
     initialize a client connection, either create a new Player object or reconnect to an existing one.
     Either returns the username or None if the user disconnected.
     """
-    rfile = conn.makefile('r')
-    wfile = conn.makefile('w')
-    wfile.write("[INFO] Welcome to the Battleship game! \n")
-    wfile.write("[INFO] Please enter your username or type 'quit' to leave: \n")
-    wfile.flush()
+    send_message(conn, "[INFO] Welcome to the Battleship game!".encode('utf-8'))
+    send_message(conn, "[INFO] Please enter your username or type 'quit' to leave:".encode('utf-8'))
 
     try:
         while True:
-            line = rfile.readline()
+            line = receive_message(conn).decode('utf-8')
             # Check for enter key
             if line == '\n': continue
             username = line.strip()
 
             # Check if user wants to quit
             if username.lower() == "quit":
-                logging.info(f"Spectator {addr} disconnected or quit.")
+                logger.info(f"Spectator {addr} disconnected or quit.")
                 return None
             # Check if user has disconnected
             elif username == '':
-                logging.info(f"Client {addr} disconnected.")
+                logger.info(f"Client {addr} disconnected.")
                 return None
             # Check if username is already taken
             elif username in players:
                 if players[username].is_disconnected.is_set():
-                    handle_reconnect(username, wfile, rfile)
+                    handle_reconnect(username, conn)
                     return username
                 else:
-                    wfile.write(f"[ERROR] Username '{username}' is already taken. Please choose another one.\n")
-                    wfile.flush()
+                    send_message(conn, f"[ERROR] Username '{username}' is already taken. Please choose another one.".encode('utf-8'))
                     continue
             # Finally, if username is not taken, initialize the new player
             else:
                 waiting_lobby_queue.append(username)
-                players[username] = Player(username, wfile, rfile)
+                players[username] = Player(username, conn)
                 players[username].is_spectator.set()
                 players[username].send(f"[INFO] Welcome {username}! You are now in the waiting lobby.")
                 players[username].send(f"[INFO] You are currently in position {waiting_lobby_queue.index(username) + 1} in the waiting lobby.")
                 return username
             
     except Exception as e:
-        logging.error(f"Error receiving messages: {e}")
+        logger.error(f"Error receiving messages: {e}")
 
 def receive_client_messages(conn, addr):
     """
@@ -109,11 +117,12 @@ def receive_client_messages(conn, addr):
     # Pre-process input before sending to battleship game
     try:
         while True:
-            line = players[username].rfile.readline()
+            line = receive_message(conn).decode('utf-8')
+            logger.info(f"Received message from {username}: {line.strip()}")
 
             # Check if user wants to quit
             if line.strip().lower() in ["quit", "exit", "forfeit"]:
-                logging.info(f"Spectator {addr} disconnected or quit.")
+                logger.info(f"Spectator {addr} disconnected or quit.")
                 break
             # Check for enter key
             elif line == '\n': continue
@@ -122,7 +131,7 @@ def receive_client_messages(conn, addr):
                 send_chat_message(line[5:], username)
             # Check if user has diconnected
             elif line == '':
-                logging.info(f"{username} disconnected.")
+                logger.info(f"{username} disconnected.")
                 players[username].is_disconnected.set()
                 if username in waiting_lobby_queue:
                     waiting_lobby_queue.remove(username)
@@ -132,7 +141,7 @@ def receive_client_messages(conn, addr):
             elif username in players and players[username].is_current_player.is_set():
                 players[username].input_queue.put(line.strip())
     except Exception as e:
-        logging.error(f"Error receiving messages from {username}: {e}")
+        logger.error(f"Error receiving messages from {username}: {e}")
         players[username].is_disconnected.set()
 
 def check_start_game():
@@ -145,7 +154,7 @@ def check_start_game():
         time.sleep(1)
         # Start the game if there are at least 2 players in the waiting lobby
         if len(waiting_lobby_queue) >= 2 and not game_ongoing_event.is_set():
-            logging.info("Starting the game...")
+            logger.info("Starting the game...")
             game_ongoing_event.set()
             currently_playing = [waiting_lobby_queue.pop(0), waiting_lobby_queue.pop(0)]
 
@@ -172,23 +181,22 @@ def check_start_game():
                 if not players[username].is_disconnected.is_set():
                     players[username].is_current_player.clear()
                     players[username].is_spectator.set()
-                    players[username].wfile.write(f"[INFO] Game over! You are back in the waiting lobby.\n")
-                    players[username].wfile.flush()
+                    players[username].send(f"[INFO] Game over! You are back in the waiting lobby.\n")
                     waiting_lobby_queue.append(username)
             currently_playing = []
             game_ongoing_event.clear()
-            logging.info("Game ended. Waiting for new players...")
+            logger.info("Game ended. Waiting for new players...")
 
 def main():
     """
     Start the server and accept connections.
     """
-    logging.info(f"Server listening on {HOST}:{PORT}")
+    logger.info(f"Server listening on {HOST}:{PORT}")
     with socket(AF_INET, SOCK_STREAM) as s:
         s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
         s.listen(MAX_CONNECTIONS)
-        logging.info("Waiting for players to connect...")
+        logger.info("Waiting for players to connect...")
         
         # Start a thread to check for game start conditions
         check_start_game_thread = Thread(target=check_start_game, daemon=True)
@@ -198,14 +206,14 @@ def main():
         while True:
             try:
                 conn, addr = s.accept()
-                logging.info(f"Accepted connection from {addr}")
+                logger.info(f"Accepted connection from {addr}")
                 client_thread = Thread(target=receive_client_messages, args=(conn, addr), daemon=True)
                 client_thread.start()
             except KeyboardInterrupt:
-                logging.info("Server shutting down...")
+                logger.info("Server shutting down...")
                 break
             except Exception as e:
-                logging.error(f"Server error: {e}")
+                logger.error(f"Server error: {e}")
 
 if __name__ == "__main__":
     main()

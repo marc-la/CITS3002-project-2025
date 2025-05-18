@@ -2,7 +2,8 @@ from battleship import *
 import logging
 from queue import Empty, Queue
 from threading import Event
-from config import * 
+from config import *
+from protocol import send_message
 
 class Player:
     """
@@ -12,18 +13,16 @@ class Player:
 
     Attributes:
         username (str): The username of the player.
-        rfile (file-like): The input stream for the player.
-        wfile (file-like): The output stream for the player.
+        conn (socket.socket): The socket connection for the player.
         input_queue (Queue): Queue for ouput stream for the player.
         board (Board): The player's board.
         is_current_player (Event): Indicates if it's the player's turn.
         is_disconnected (Event): Indicates if the player has disconnected.
         is_spectator (Event): Indicates if the player is a spectator.
     """
-    def __init__(self, username, wfile, rfile):
+    def __init__(self, username, conn):
         self.username = username
-        self.wfile = wfile
-        self.rfile = rfile
+        self.conn = conn
         self.board = Board(BOARD_SIZE)
         self.input_queue = Queue()
         self.is_disconnected = Event()
@@ -32,8 +31,7 @@ class Player:
 
     def send(self, msg):
         try:
-            self.wfile.write(msg + '\n')
-            self.wfile.flush()
+            send_message(self.conn, msg.encode('utf-8'))
         except Exception as e:
             self.is_disconnected.set()
             logging.error(f"Error sending message to player {self.username}: {e}")
