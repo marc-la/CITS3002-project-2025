@@ -9,6 +9,13 @@ import logging
 logger = logging.getLogger("client")
 logger.setLevel(logging.INFO)
 
+# Add a handler with formatting only if not already present
+if not logger.hasHandlers():
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('[%(levelname)s] %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
 game_over_event = Event()
 
 def receive_server_messages(conn):

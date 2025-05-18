@@ -45,6 +45,12 @@ class Packet:
         self.payload = payload
         self.checksum = compute_checksum(payload)
 
+        _logger.debug(
+            f"Packet created: seq_num={seq_num}, type={packet_type.name}, "
+            f"length={len(payload)}, checksum={self.checksum}, "
+            f"payload_preview={payload[:32]!r}{'...' if len(payload) > 32 else ''}"
+        )
+
     def pack(self) -> bytes:
         """
         Serialize header fields and payload.
@@ -89,28 +95,24 @@ class Packet:
 # 1. Create a shared, thread‑safe queue
 _log_queue = Queue()  # unlimited size by default
 
-# 2. Configure root logger to enqueue
+# 2. Configure protocol logger to enqueue
 _queue_handler = QueueHandler(_log_queue)
-_root_logger = logging.getLogger()
-_root_logger.setLevel(logging.DEBUG)
-_root_logger.addHandler(_queue_handler)
+_protocol_logger = logging.getLogger("protocol.src.packet")
+_protocol_logger.setLevel(logging.DEBUG)
+_protocol_logger.addHandler(_queue_handler)
 
 # 3. Create real handlers (file, console, etc.)
 _file_handler = logging.FileHandler("protocol.log", mode="w", encoding="utf-8")
-_console_handler = logging.StreamHandler()
 _file_handler.setLevel(logging.DEBUG)
-_console_handler.setLevel(logging.DEBUG)
 _formatter = logging.Formatter(
     "%(asctime)s %(threadName)s %(name)s %(levelname)s %(message)s"
 )
 _file_handler.setFormatter(_formatter)
-_console_handler.setFormatter(_formatter)
 
 # 4. Start listener thread
 _listener = QueueListener(
     _log_queue,
     _file_handler,
-    _console_handler,
     respect_handler_level=True
 )
 _listener.start()  # spins off background thread
@@ -122,7 +124,7 @@ def shutdown_logging():
     Call this at application exit to ensure all logs are written.
     """
     _listener.stop()
-    for handler in (_file_handler, _console_handler):
+    for handler in (_file_handler,):
         try:
             handler.flush()
             handler.close()
@@ -131,7 +133,7 @@ def shutdown_logging():
 
 # ---------====---- Transport helpers with fragmentation and reassembly ---------------
 
-_logger = logging.getLogger(__name__)
+_logger = logging.getLogger("protocol.src.packet")
 
 def send_message(sock: socket.socket, message: bytes) -> None:
     """
