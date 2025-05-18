@@ -10,6 +10,7 @@ import logging
 
 logger = logging.getLogger("server")
 logger.setLevel(logging.INFO)
+logger.propagate = False
 
 # Add a handler with formatting only if not already present
 if not logger.hasHandlers():
