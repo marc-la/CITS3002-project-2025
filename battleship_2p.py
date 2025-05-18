@@ -106,7 +106,7 @@ def run_two_player_battleship_game(players, player0, player1):
 
         if choice == 'M':
             player.send("You chose manual placement.")
-            player.board.place_ships_manually(SHIPS)
+            player.board.place_ships_manually(player, SHIPS)
         else:
             player.send("You chose random placement.")
             player.board.place_ships_randomly(SHIPS)

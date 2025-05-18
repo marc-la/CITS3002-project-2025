@@ -72,32 +72,42 @@ class Board:
                     placed = True
 
 
-    def place_ships_manually(self, ships=SHIPS):
+    def place_ships_manually(self, player, ships=SHIPS):
         """
         Prompt the user for each ship's starting coordinate and orientation (H or V).
         Validates the placement; if invalid, re-prompts.
         """
-        print("\nPlease place your ships manually on the board.")
+        player.send("Please place your ships manually on the board. You have 30 seconds to place each ship")
         for ship_name, ship_size in ships:
             while True:
-                self.print_display_grid(show_hidden_board=True)
-                print(f"\nPlacing your {ship_name} (size {ship_size}).")
-                coord_str = input("  Enter starting coordinate (e.g. A1): ").strip()
-                orientation_str = input("  Orientation? Enter 'H' (horizontal) or 'V' (vertical): ").strip().upper()
+                self.print_display_grid(player, show_hidden_board=True)
+                player.send(f"Placing your {ship_name} (size {ship_size}).")
+                player.send(f"Enter starting coordinate (e.g. A1): ")
+                coord_str = player.get_next_input()
+                if not coord_str: 
+                    player.send("You have timed out. Ships will be placed randomly.")
+                    player.board.place_ships_randomly(SHIPS)
+                    return
+                player.send("Orientation? Enter 'H' (horizontal) or 'V' (vertical): ")
+                orientation_str = player.get_next_input()
+                if not orientation_str: 
+                    player.send("You have timed out. Ships will be placed randomly.")
+                    player.board.place_ships_randomly(SHIPS)
+                    return
 
                 try:
-                    row, col = parse_coordinate(coord_str)
+                    row, col = parse_coordinate(coord_str.strip())
                 except ValueError as e:
-                    print(f"  [!] Invalid coordinate: {e}")
+                    player.send(f"  [!] Invalid coordinate: {e}")
                     continue
 
                 # Convert orientation_str to 0 (horizontal) or 1 (vertical)
-                if orientation_str == 'H':
+                if orientation_str.upper() == 'H':
                     orientation = 0
-                elif orientation_str == 'V':
+                elif orientation_str.upper() == 'V':
                     orientation = 1
                 else:
-                    print("  [!] Invalid orientation. Please enter 'H' or 'V'.")
+                    player.send("  [!] Invalid orientation. Please enter 'H' or 'V'.")
                     continue
 
                 # Check if we can place the ship
@@ -109,7 +119,7 @@ class Board:
                     })
                     break
                 else:
-                    print(f"  [!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
+                    player.send(f"  [!] Cannot place {ship_name} at {coord_str} (orientation={orientation_str}). Try again.")
 
 
     def can_place_ship(self, row, col, ship_size, orientation):
@@ -203,7 +213,7 @@ class Board:
                 return False
         return True
 
-    def print_display_grid(self, show_hidden_board=False):
+    def print_display_grid(self, player, show_hidden_board=False):
         """
         Print the board as a 2D grid.
         
@@ -222,12 +232,12 @@ class Board:
         grid_to_print = self.hidden_grid if show_hidden_board else self.display_grid
 
         # Column headers (1 .. N)
-        print("  " + "".join(str(i + 1).rjust(2) for i in range(self.size)))
+        player.send(".  " + "".join(str(i + 1).ljust(2) for i in range(self.size)))
         # Each row labeled with A, B, C, ...
         for r in range(self.size):
             row_label = chr(ord('A') + r)
             row_str = " ".join(grid_to_print[r][c] for c in range(self.size))
-            print(f"{row_label:2} {row_str}")
+            player.send(f"{row_label:2} {row_str}")
 
 
 def parse_coordinate(coord_str):
