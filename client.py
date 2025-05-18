@@ -6,10 +6,8 @@ from config import *
 from protocol import send_message, receive_message
 import logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='[CLIENT] %(level)%: %(message)s'
-)
+logger = logging.getLogger("client")
+logger.setLevel(logging.INFO)
 
 game_over_event = Event()
 
@@ -17,7 +15,7 @@ def receive_server_messages(conn):
     while not game_over_event.is_set():
         line = receive_message(conn).decode('utf-8')
         if not line:
-            logging.info("Server disconnected.")
+            logger.info("Server disconnected.")
             break
         print(line)
 
@@ -33,12 +31,12 @@ def main():
                 send_message(conn, user_input.encode('utf-8'))
                 if user_input.lower() in ['quit', 'exit', 'forfeit']:
                     game_over_event.set()
-                    logging.info("Exiting...")
+                    logger.info("Exiting...")
                     break
                 elif user_input == "":
                     continue
         except KeyboardInterrupt:
-            logging.info("Client exiting due to keyboard interrupt.")
+            logger.info("Client exiting due to keyboard interrupt.")
             game_over_event.set()
 
 if __name__ == "__main__":

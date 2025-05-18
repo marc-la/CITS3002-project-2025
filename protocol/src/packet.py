@@ -96,8 +96,10 @@ _root_logger.setLevel(logging.DEBUG)
 _root_logger.addHandler(_queue_handler)
 
 # 3. Create real handlers (file, console, etc.)
-_file_handler = logging.FileHandler("protocol.log", mode="a", encoding="utf-8")
+_file_handler = logging.FileHandler("protocol.log", mode="w", encoding="utf-8")
 _console_handler = logging.StreamHandler()
+_file_handler.setLevel(logging.DEBUG)
+_console_handler.setLevel(logging.DEBUG)
 _formatter = logging.Formatter(
     "%(asctime)s %(threadName)s %(name)s %(levelname)s %(message)s"
 )
@@ -117,12 +119,15 @@ _listener.start()  # spins off background thread
 def shutdown_logging():
     """
     Stop the listener thread and flush all handlers.
-    Call this at application exit.
+    Call this at application exit to ensure all logs are written.
     """
     _listener.stop()
-    for h in (_file_handler, _console_handler):
-        h.flush()
-        h.close()
+    for handler in (_file_handler, _console_handler):
+        try:
+            handler.flush()
+            handler.close()
+        except Exception:
+            pass
 
 # ---------====---- Transport helpers with fragmentation and reassembly ---------------
 
