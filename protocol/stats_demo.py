@@ -1,7 +1,9 @@
+# RUN: `python3 -m protocol.stats_demo`` from root directory.
+
 import random
-from src.packet import Packet, PacketType, MAX_PAYLOAD
-from src.checksum import verify_checksum
-from src.errors import ChecksumError
+from .src.packet import Packet, PacketType, MAX_PAYLOAD
+from .src.checksum import verify_checksum
+from .src.errors import ChecksumError
 
 def inject_random_bit_error(data: bytes, probability: float = 0.01) -> bytes:
     """

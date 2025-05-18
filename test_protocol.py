@@ -42,11 +42,9 @@ def main():
 
     try:
         run_client()
+        server_thread.join(timeout=5)  # Wait for server to finish processing
     finally:
-        # Ensure logging is properly shut down even if client fails
-        shutdown_logging()
-        # Wait for server to finish processing
-        server_thread.join(timeout=5)
+        shutdown_logging()  # Shutdown logging after all threads are done
 
 if __name__ == '__main__':
     main()
