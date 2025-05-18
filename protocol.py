@@ -1,6 +1,7 @@
 import struct
 import socket
 import time
+import logging
 from config import DEBUG
 from enum import IntEnum
 
@@ -49,6 +50,7 @@ class PacketType(IntEnum):
     ACK = 0x02
     NACK = 0x03
     END = 0x04
+    DONE = 0x05  # <-- Add this for shutdown handshake
 
 # ---------- Protocol Functions -------------------
 
@@ -86,7 +88,7 @@ def send_packets(message: str, conn: socket.socket, debug=DEBUG):
                 conn.send(pkt.to_bytes())
                 if debug:
                     elapsed = time.time() - start_time
-                    print(f"[send][{elapsed:.3f}s] Sent packet {i}")
+                    logging.debug(f"[send][{elapsed:.3f}s] Sent packet {i}")
 
         try:
             conn.settimeout(0.1)
@@ -101,24 +103,40 @@ def send_packets(message: str, conn: socket.socket, debug=DEBUG):
                     acks.add(ack_pkt.seq)
                     if debug:
                         elapsed = time.time() - start_time
-                        print(f"[send][{elapsed:.3f}s] Received ACK for packet {ack_pkt.seq}")
+                        logging.debug(f"[send][{elapsed:.3f}s] Received ACK for packet {ack_pkt.seq}")
                 elif ack_pkt.pkt_type == PacketType.NACK:
                     if debug:
                         elapsed = time.time() - start_time
-                        print(f"[send][{elapsed:.3f}s] Retransmit requested for packet {ack_pkt.seq}")
+                        logging.debug(f"[send][{elapsed:.3f}s] Retransmit requested for packet {ack_pkt.seq}")
                 offset += HEADER_SIZE
         except socket.timeout:
             if debug:
                 elapsed = time.time() - start_time
-                print(f"[send][{elapsed:.3f}s] Timeout, resending unacknowledged packets...")
+                logging.debug(f"[send][{elapsed:.3f}s] Timeout, resending unacknowledged packets...")
 
     # Send final acknowledgment to indicate all packets were received
     final_ack = Packet(seq + 1, PacketType.ACK, b'')
     conn.send(final_ack.to_bytes())
     if debug:
         elapsed = time.time() - start_time
-        print(f"[send][{elapsed:.3f}s] Sent final acknowledgment to server.")
-        print(f"[send] Total time elapsed: {elapsed:.3f}s")
+        logging.debug(f"[send][{elapsed:.3f}s] Sent final acknowledgment to server.")
+
+    # Wait for final DONE from receiver before closing
+    try:
+        conn.settimeout(2.0)
+        done_data = conn.recv(HEADER_SIZE)
+        done_pkt = Packet.from_bytes(done_data)
+        if done_pkt.pkt_type == PacketType.DONE:
+            if debug:
+                elapsed = time.time() - start_time
+                logging.debug(f"[send][{elapsed:.3f}s] Received DONE from receiver.")
+    except Exception as e:
+        if debug:
+            logging.debug(f"[send] Exception waiting for DONE: {e}")
+
+    if debug:
+        elapsed = time.time() - start_time
+        logging.debug(f"[send] Total time elapsed: {elapsed:.3f}s")
 
 def recv_all(conn, n):
     data = b''
@@ -132,6 +150,7 @@ def recv_all(conn, n):
 def receive_packets(conn: socket.socket, debug=DEBUG) -> str:
     received_packets = {}
     start_time = time.time() if debug else None
+    end_seq = None
     while True:
         try:
             header = recv_all(conn, HEADER_SIZE)
@@ -142,12 +161,12 @@ def receive_packets(conn: socket.socket, debug=DEBUG) -> str:
             except ValueError:
                 if debug:
                     elapsed = time.time() - start_time
-                    print(f"[receive][{elapsed:.3f}s] Checksum failed for packet {seq}")
+                    logging.debug(f"[receive][{elapsed:.3f}s] Checksum failed for packet {seq}")
                 nack = Packet(seq, PacketType.NACK, b'')
                 conn.send(nack.to_bytes())
                 if debug:
                     elapsed = time.time() - start_time
-                    print(f"[receive][{elapsed:.3f}s] Sent NACK for packet {seq}")
+                    logging.debug(f"[receive][{elapsed:.3f}s] Sent NACK for packet {seq}")
                 continue
 
             if pkt.pkt_type == PacketType.DATA:
@@ -156,31 +175,43 @@ def receive_packets(conn: socket.socket, debug=DEBUG) -> str:
                 conn.send(ack.to_bytes())
                 if debug:
                     elapsed = time.time() - start_time
-                    print(f"[receive][{elapsed:.3f}s] Sent ACK for packet {pkt.seq}")
+                    logging.debug(f"[receive][{elapsed:.3f}s] Sent ACK for packet {pkt.seq}")
 
             elif pkt.pkt_type == PacketType.END:
                 conn.send(Packet(pkt.seq, PacketType.ACK, b'').to_bytes())
+                end_seq = pkt.seq
                 if debug:
                     elapsed = time.time() - start_time
-                    print(f"[receive][{elapsed:.3f}s] Sent ACK for END packet {pkt.seq}")
+                    logging.debug(f"[receive][{elapsed:.3f}s] Sent ACK for END packet {pkt.seq}")
+                break  # <-- break after END
 
             elif pkt.pkt_type == PacketType.ACK:
                 if debug:
                     elapsed = time.time() - start_time
-                    print(f"[receive][{elapsed:.3f}s] Final acknowledgment received. Closing connection.")
+                    logging.debug(f"[receive][{elapsed:.3f}s] Final acknowledgment received. Closing connection.")
                 if received_packets:
                     break
         except socket.timeout:
             continue
 
+    # After END, send DONE to sender to signal safe shutdown
+    try:
+        conn.send(Packet((end_seq or 0) + 1, PacketType.DONE, b'').to_bytes())
+        if debug:
+            elapsed = time.time() - start_time
+            logging.debug(f"[receive][{elapsed:.3f}s] Sent DONE to sender.")
+    except Exception as e:
+        if debug:
+            logging.debug(f"[receive] Exception sending DONE: {e}")
+
     if not received_packets:
         if debug:
             elapsed = time.time() - start_time
-            print(f"[receive][{elapsed:.3f}s] No data packets received.")
+            logging.debug(f"[receive][{elapsed:.3f}s] No data packets received.")
         return ""
     ordered = [received_packets[i] for i in sorted(received_packets.keys())]
     full_data = b''.join(ordered)
     if debug:
         elapsed = time.time() - start_time
-        print(f"[receive] Total time elapsed: {elapsed:.3f}s")
+        logging.debug(f"[receive] Total time elapsed: {elapsed:.3f}s")
     return full_data.decode('utf-8')

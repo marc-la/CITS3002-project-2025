@@ -4,6 +4,12 @@ from socket import socket, AF_INET, SOCK_STREAM
 from threading import Event, Thread
 from config import *
 from protocol import send_packets, receive_packets
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,  # Hide debug messages
+    format='[%(levelname)s] %(message)s'
+)
 
 game_over_event = Event()
 

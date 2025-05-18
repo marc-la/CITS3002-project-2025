@@ -1,6 +1,12 @@
 import threading
 import time
 from protocol import receive_packets, send_packets, DEBUG
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(message)s'
+)
 
 def test_protocol():
     import socket
@@ -14,6 +20,71 @@ def test_protocol():
         "It should be split into multiple packets and sent over the socket. "
         "The server should receive it correctly and reassemble it. "
         "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+                "Hello, this is a test message to check the protocol implementation. "
+        "It should be split into multiple packets and sent over the socket. "
+        "The server should receive it correctly and reassemble it. "
+        "Ligma balls I hate my life. I wanna finish exams and go on holiday."
+        
     )
 
     # Server function (runs in a thread)

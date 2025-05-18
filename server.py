@@ -6,6 +6,16 @@ from battleship_2p import run_two_player_battleship_game
 from player import Player
 from protocol import receive_packets, send_packets
 import time
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,  # Show debug messages
+    format='[%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler("server_debug.log"),  # Write to a file
+        logging.StreamHandler()                   # And to stderr
+    ]
+)
 
 players = {}                    # username as key, Player object as value
 currently_playing = []          # Store usernames of players
