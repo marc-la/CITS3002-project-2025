@@ -8,12 +8,11 @@ This project implements a custom low-level protocol with error detection and han
 - `src/packet.py`: Defines the `Packet` class for creating, packing, and unpacking protocol packets, including checksum verification and error handling.
 - `src/checksum.py`: Implements functions for computing and verifying checksums using CRC32.
 - `src/errors.py`: Defines custom exceptions for handling checksum verification failures and out-of-sequence packets.
-- `src/stats_demo/__init__.py`: Initializer for the statistical demonstration module.
-- `src/stats_demo/injector.py`: Contains functionality to inject errors or scramble bits in packets to measure corruption detection.
+- `src/stats_demo.py`: Contains functionality to inject errors or scramble bits in packets to measure corruption detection.
 
 ## Getting Started
 
-To set up the project, clone the repository and navigate to the `src` directory. You can run the statistical demonstration by executing the `injector.py` script.
+To set up the project, clone the repository and navigate to the `src` directory. You can run the statistical demonstration by executing the `stats_demo.py` script.
 
 ### Requirements
 
@@ -24,7 +23,7 @@ To set up the project, clone the repository and navigate to the `src` directory.
 
 1. Run the statistical demonstration script:
    ```
-   python stat_demo.py
+   python stats_demo.py
    ```
 
 ### Expected Output
