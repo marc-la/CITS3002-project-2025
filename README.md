@@ -2,13 +2,13 @@
 This project implements a client-server architecture for a battleship game run on the command line.
 
 ## Install Dependencies
-The server and client uses `pycryptodome` for encryption. To install:
+The server and client uses `pycryptodome` for encryption and `pytest` for testing. To install:
 ```bash
 pip install pycryptodome
-pip install python3-pytest
+pip install pytest
 ```
 
-`pycryptodome` is the only python module required. To be safe however, we have also provided a requirements.txt file. To install:
+`pycryptodome` and `pytest` are the only python modules required. To be safe however, we have also provided a requirements.txt file. To install:
 ```bash
 python3 install -r requirements.txt
 ```

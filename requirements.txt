@@ -1,1 +1,5 @@
+iniconfig==2.1.0
+packaging==25.0
+pluggy==1.6.0
 pycryptodome==3.23.0
+pytest==8.3.5
