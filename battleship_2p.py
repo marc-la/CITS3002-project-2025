@@ -117,7 +117,6 @@ def run_two_player_battleship_game(players, player0, player1):
     send_to_both_players(player_list, "The game begins! Players will alternate turns firing at each other.")
     broadcast_spectators("The game begins! Players will alternate turns firing at each other.", players, players[player0], players[player1])
     display_board(other_player, current_player)
-    broadcast_spectators("GRID", players, players[player0], players[player1])
     should_print_board_to_player = True
     while True:
         #    - Handle disconnections/timeouts
@@ -173,14 +172,14 @@ def run_two_player_battleship_game(players, player0, player1):
         result, ship_was_sunk = other_player.board.fire_at(row, col)
         if result == "hit":
             if ship_was_sunk:
-                current_player.send(f"Hit! You sunk a ship at {ship_was_sunk}.")
-                other_player.send(f"Your ship was sunk at {ship_was_sunk}.")
+                current_player.send(f"Hit! You sunk your oppnent's {ship_was_sunk}.")
+                other_player.send(f"Your {ship_was_sunk} was sunk.")
             else:
                 current_player.send(f"Hit! You hit a ship at {guess}.")
                 other_player.send(f"Your ship was hit at {guess}.")
         elif result == "miss":
             current_player.send(f"Miss! You missed at {guess}.")
-            other_player.send(f"The opponent missed!")
+            other_player.send(f"Your opponent missed!")
         elif result == "already_shot":
             current_player.send(f"You already shot at {guess}. Try again.")
             should_print_board_to_player = False

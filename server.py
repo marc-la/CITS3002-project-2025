@@ -110,7 +110,9 @@ def init_client(conn, addr):
                 players[username].send(f"[INFO] Welcome {username}! You are now in the waiting lobby.")
                 players[username].send(f"[INFO] You are currently in position {waiting_lobby_queue.index(username) + 1} in the waiting lobby.")
                 return username
-            
+    except (BrokenPipeError, ConnectionResetError):
+        logger.info(f"Client {addr} disconnected.")
+        return None
     except Exception as e:
         logger.error(f"Error receiving messages: {e}")
 
@@ -135,6 +137,7 @@ def receive_client_messages(conn, addr):
             # Check if user wants to quit
             if line.strip().lower() in ["quit", "exit", "forfeit"]:
                 logger.info(f"Spectator {addr} disconnected or quit.")
+                players[username].is_disconnected.set()
                 break
             # Check for enter key
             elif line == '\n': continue
@@ -152,6 +155,9 @@ def receive_client_messages(conn, addr):
             # Finally, if user is in the game, add input to their queue
             elif username in players and players[username].is_current_player.is_set():
                 players[username].input_queue.put(line.strip())
+    except (BrokenPipeError, ConnectionResetError):
+        players[username].is_disconnected.set()
+        logger.info(f"Client {addr} disconnected.")
     except Exception as e:
         logger.error(f"Error receiving messages from {username}: {e}")
         players[username].is_disconnected.set()
