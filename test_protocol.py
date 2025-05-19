@@ -6,6 +6,9 @@ from protocol import send_message, receive_message, shutdown_logging
 HOST = '127.0.0.1'
 PORT = 9999
 
+# The shared secret key for HMAC (must be agreed by both sides)
+KEY = b'supersecretkey123'
+
 test_message = (
     "Hello, this is a test message to check the protocol implementation. "
     "It should be split into multiple packets and sent over the socket. "
@@ -23,7 +26,11 @@ def run_server():
         conn, addr = s.accept()
         with conn:
             print(f"[Server] Connected by {addr}")
-            received = receive_message(conn)
+            try:
+                received = receive_message(conn, key=KEY, max_skew=300, seen_nonces=None)
+            except TypeError:
+                # old version of receive_message just takes the socket
+                received = receive_message(conn)
             print(f"[Server] Received message:\n{received.decode('utf-8')}\n")
 
 
@@ -32,7 +39,11 @@ def run_client():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
         print("[Client] Sending message...")
-        send_message(s, test_message.encode('utf-8'))
+        try:
+            send_message(s, test_message.encode('utf-8'), key=KEY, use_timestamp=True)
+        except TypeError:
+            # old version of send_message doesn’t accept key/use_timestamp
+            send_message(s, test_message.encode('utf-8'))
         print("[Client] Message sent.")
 
 

@@ -12,29 +12,17 @@ from ..crypto import encrypt_payload, decrypt_payload, generate_iv
 
 # ------------------- Async Logging Setup ------------------------------
 
-# 1. Create a shared, thread‑safe queue
-_log_queue = Queue()  # unlimited size by default
-
-# 2. Configure protocol logger to enqueue
+_log_queue = Queue()
 _queue_handler = QueueHandler(_log_queue)
-
-# 3. Create real handlers (file, console, etc.)
 _file_handler = logging.FileHandler("protocol.log", mode="w", encoding="utf-8")
 _file_handler.setLevel(logging.DEBUG)
 _formatter = logging.Formatter(
     "%(asctime)s %(threadName)s %(name)s %(levelname)s %(message)s"
 )
 _file_handler.setFormatter(_formatter)
+_listener = QueueListener(_log_queue, _file_handler, respect_handler_level=True)
+_listener.start()
 
-# 4. Start listener thread
-_listener = QueueListener(
-    _log_queue,
-    _file_handler,
-    respect_handler_level=True
-)
-_listener.start()  # spins off background thread
-
-# Provide a clean shutdown hook
 def shutdown_logging():
     """
     Stop the listener thread and flush all handlers.
@@ -51,7 +39,7 @@ def shutdown_logging():
 _logger = logging.getLogger("protocol.src.packet")
 _logger.setLevel(logging.DEBUG)
 _logger.addHandler(_queue_handler)
-_logger.propagate = False  # Prevent propagation to root logger
+_logger.propagate = False
 
 # -------------------  Packet Definition  ------------------------------
 
