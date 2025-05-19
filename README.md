@@ -5,6 +5,7 @@ This project implements a client-server architecture for a battleship game run o
 The server and client uses `pycryptodome` for encryption. To install:
 ```bash
 pip install pycryptodome
+pip install python3-pytest
 ```
 
 `pycryptodome` is the only python module required. To be safe however, we have also provided a requirements.txt file. To install:
