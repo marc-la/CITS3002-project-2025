@@ -128,7 +128,7 @@ def receive_client_messages(conn, addr):
             # Check for enter key
             elif line == '\n': continue
             # Check for CHAT command
-            elif username in waiting_lobby_queue and line.strip().upper()[:4] == "CHAT":
+            elif line.strip().upper()[:4] == "CHAT":
                 send_chat_message(line[5:], username)
             # Check if user has diconnected
             elif line == '':
