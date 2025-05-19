@@ -5,6 +5,8 @@ from threading import Event
 from config import *
 from protocol import send_message
 
+from server import logger
+
 class Player:
     """
     Class player.
@@ -34,13 +36,13 @@ class Player:
             send_message(self.conn, msg.encode('utf-8'), key=KEY, use_timestamp=False)
         except Exception as e:
             self.is_disconnected.set()
-            logging.error(f"Error sending message to player {self.username}: {e}")
+            logger.error(f"Error sending message to player {self.username}: {e}")
 
     def get_next_input(self):
         try:
             input = self.input_queue.get(timeout=TIMEOUT_SECONDS)
-            logging.info(f"Received input from {self.username}: {input}")
+            logger.info(f"Received input from {self.username}: {input}")
             return input
         except Empty:
-            logging.info(f"{self.username} timed out waiting for input.")
+            logger.info(f"{self.username} timed out waiting for input.")
             return None
