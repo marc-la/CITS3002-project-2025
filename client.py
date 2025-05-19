@@ -22,7 +22,7 @@ exit_condition = Event()
 
 def receive_server_messages(conn):
     while not exit_condition.is_set():
-        line = receive_message(conn, key=KEY, max_skew=300).decode('utf-8')
+        line = receive_message(conn, key=KEY).decode('utf-8')
         if not line:
             logger.info("Server disconnected.")
             exit_condition.set()
@@ -42,7 +42,7 @@ def main():
         try:
             while not exit_condition.is_set():
                 user_input = stdin.readline()
-                send_message(conn, user_input.encode('utf-8'), key=KEY, use_timestamp=True)
+                send_message(conn, user_input.encode('utf-8'), key=KEY, use_timestamp=False)
                 if user_input.lower() in ['quit', 'exit', 'forfeit']:
                     exit_condition.set()
                     logger.info("Exiting...")

@@ -71,13 +71,13 @@ def init_client(conn, addr):
     initialize a client connection, either create a new Player object or reconnect to an existing one.
     Either returns the username or None if the user disconnected.
     """
-    send_message(conn, "[INFO] Welcome to the Battleship game!".encode('utf-8'), key=KEY, use_timestamp=True)
-    send_message(conn, "[INFO] Please enter your username or type 'quit' to leave:".encode('utf-8'), key=KEY, use_timestamp=True)
+    send_message(conn, "[INFO] Welcome to the Battleship game!".encode('utf-8'), key=KEY, use_timestamp=False)
+    send_message(conn, "[INFO] Please enter your username or type 'quit' to leave:".encode('utf-8'), key=KEY, use_timestamp=False)
 
     try:
         while True:
             try:
-                line = receive_message(conn, key=KEY, max_skew=300, seen_nonces=seen_nonces).decode('utf-8')
+                line = receive_message(conn, key=KEY, max_skew=None, seen_nonces=seen_nonces).decode('utf-8')
             except ReplayError as e:
                 logger.warning(f"Replay attack detected: {e}")
                 continue
@@ -100,7 +100,7 @@ def init_client(conn, addr):
                     handle_reconnect(username, conn)
                     return username
                 else:
-                    send_message(conn, f"[ERROR] Username '{username}' is already taken. Please choose another one.".encode('utf-8'), key=KEY, use_timestamp=True)
+                    send_message(conn, f"[ERROR] Username '{username}' is already taken. Please choose another one.".encode('utf-8'), key=KEY, use_timestamp=False)
                     continue
             # Finally, if username is not taken, initialize the new player
             else:
@@ -125,7 +125,7 @@ def receive_client_messages(conn, addr):
     try:
         while True:
             try:
-                line = receive_message(conn, key=KEY, max_skew=300, seen_nonces=seen_nonces).decode('utf-8')
+                line = receive_message(conn, key=KEY, max_skew=None, seen_nonces=seen_nonces).decode('utf-8')
             except ReplayError as e:
                 logger.warning(f"Replay attack detected: {e}")
                 continue

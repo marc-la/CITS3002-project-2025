@@ -145,19 +145,23 @@ class Packet:
 
         # Verify MAC
         header = raw[:mac_start]
-        expected = hmac.new(key, header + payload, MAC_ALGORITHM).digest()[:mac_len]
-        if not hmac.compare_digest(recv_mac, expected):
+        expected_mac = hmac.new(key, header + payload, MAC_ALGORITHM).digest()[:mac_len]
+        if not hmac.compare_digest(recv_mac, expected_mac):
             raise ChecksumError(f"MAC mismatch on seq {seq_num}")
 
-        # Freshness check
+        # ------------------ FRESHNESS CHECK ------------------
+        # 1) Timestamp skew check (if requested)
         if max_skew is not None:
             now = int(time.time())
             if abs(now - freshness) > max_skew:
                 raise ReplayError(f"Timestamp out of skew: got {freshness}, now {now}")
-        elif seen_nonces is not None:
+
+        # 2) Nonce replay check (if requested)
+        if seen_nonces is not None:
             if freshness in seen_nonces:
                 raise ReplayError(f"Nonce replay: {freshness}")
             seen_nonces.add(freshness)
+        # -----------------------------------------------------
 
         # Verify checksum
         if not verify_checksum(payload, recv_checksum):
@@ -191,7 +195,7 @@ class Packet:
             f"length={pkt.length}, payload_preview={pkt.payload[:32]!r}{'...' if pkt.length > 32 else ''}"
         )
         return pkt
-
+    
 # -------------------  Transport Helpers  ------------------------------
 
 def send_message(sock: socket.socket, message: bytes,
