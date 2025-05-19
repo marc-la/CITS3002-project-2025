@@ -106,10 +106,7 @@ def init_client(conn, addr):
                 players[username].send(f"[INFO] Welcome {username}! You are now in the waiting lobby.")
                 players[username].send(f"[INFO] You are currently in position {waiting_lobby_queue.index(username) + 1} in the waiting lobby.")
                 return username
-    except (BrokenPipeError, ConnectionResetError):
-        logger.info(f"Client {addr} disconnected.")
-        return None
-    except Exception as e:
+    except (BrokenPipeError, ConnectionResetError, OSError):
         logger.info(f"Client {addr} disconnected.")
         return None
 
@@ -146,10 +143,8 @@ def receive_client_messages(conn, addr):
             # Finally, if user is in the game, add input to their queue
             elif username in players and players[username].is_current_player.is_set():
                 players[username].input_queue.put(line.strip())
-    except (BrokenPipeError, ConnectionResetError):
+    except (BrokenPipeError, ConnectionResetError, OSError):
         players[username].is_disconnected.set()
-        logger.info(f"Client {addr} disconnected.")
-    except Exception:
         logger.info(f"{username} disconnected.")
         players[username].is_disconnected.set()
         if username in waiting_lobby_queue:
