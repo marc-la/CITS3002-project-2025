@@ -21,13 +21,17 @@ if not logger.hasHandlers():
 exit_condition = Event()
 
 def receive_server_messages(conn):
-    while not exit_condition.is_set():
-        line = receive_message(conn, key=KEY).decode('utf-8')
-        if not line:
-            logger.info("Server disconnected.")
-            exit_condition.set()
-            break 
-        print(line)
+    try:
+        while not exit_condition.is_set():
+            line = receive_message(conn, key=KEY).decode('utf-8')
+            if not line:
+                logger.info("Server disconnected.")
+                exit_condition.set()
+                break 
+            print(line)
+    except Exception as e:
+        logger.error(f"Server disconnected: {e}")
+        exit_condition.set()
 
 def main():
     parser = argparse.ArgumentParser(description="Client for the game server.")
@@ -49,6 +53,9 @@ def main():
                     return
         except KeyboardInterrupt:
             logger.info("Client exiting due to keyboard interrupt.")
+            exit_condition.set()
+        except Exception as e:
+            logger.error(f"An error occurred: {e}")
             exit_condition.set()
 
 if __name__ == "__main__":
