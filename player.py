@@ -31,7 +31,7 @@ class Player:
 
     def send(self, msg):
         try:
-            send_message(self.conn, msg.encode('utf-8'))
+            send_message(self.conn, msg.encode('utf-8'), key=KEY, use_timestamp=True)
         except Exception as e:
             self.is_disconnected.set()
             logging.error(f"Error sending message to player {self.username}: {e}")
