@@ -144,6 +144,7 @@ def receive_client_messages(conn, addr):
             # Check for CHAT command
             elif line.strip().upper()[:4] == "CHAT":
                 send_chat_message(line[5:], username)
+                players[username].send(f"MESSAGE SENT")
             # Check if user has diconnected
             elif line == '':
                 logger.info(f"{username} disconnected.")

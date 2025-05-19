@@ -43,13 +43,10 @@ def main():
             while not exit_condition.is_set():
                 user_input = stdin.readline()
                 send_message(conn, user_input.encode('utf-8'), key=KEY, use_timestamp=False)
-                if user_input.lower() in ['quit', 'exit', 'forfeit']:
+                if user_input.strip().lower() in ['quit', 'exit', 'forfeit']:
                     exit_condition.set()
-                    logger.info("Exiting...")
-                    exit_condition.set()
-                    break
-                elif user_input == "":
-                    continue
+                    print("Exiting client...")
+                    return
         except KeyboardInterrupt:
             logger.info("Client exiting due to keyboard interrupt.")
             exit_condition.set()
