@@ -5,5 +5,5 @@ __pycache__/
 *.pyd
 *.pytest*
 
-.vscode/
+*.vscode/*
 *.log
