@@ -5,7 +5,9 @@ from threading import Event
 from config import *
 from protocol import send_message
 
-from server import logger
+logger = logging.getLogger("player")
+logger.setLevel(logging.INFO)
+logger.propagate = False
 
 class Player:
     """
@@ -23,16 +25,18 @@ class Player:
         is_spectator (Event): Indicates if the player is a spectator.
     """
     def __init__(self, username, conn):
-        self.username = username
-        self.conn = conn
-        self.board = Board(BOARD_SIZE)
-        self.input_queue = Queue()
-        self.is_disconnected = Event()
-        self.is_current_player = Event()
-        self.is_spectator = Event()
+        self.username = username              # The username of the player
+        self.conn = conn                      # The socket connection for the player
+        self.board = Board(BOARD_SIZE)        # The player's game board
+        self.input_queue = Queue()            # Queue for incoming input from the player
+        self.is_disconnected = Event()        # Event flag for player disconnection
+        self.is_current_player = Event()      # Event flag for tracking player's turn
+        self.is_spectator = Event()           # Event flag for spectator status
 
     def send(self, msg):
         try:
+            if self.is_disconnected.is_set():
+                return
             send_message(self.conn, msg.encode('utf-8'), key=KEY, use_timestamp=False)
         except Exception as e:
             self.is_disconnected.set()

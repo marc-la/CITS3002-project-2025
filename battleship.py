@@ -14,10 +14,10 @@ import random
 
 BOARD_SIZE = 10
 SHIPS = [
-    ("Carrier", 5),
-    ("Battleship", 4),
-    ("Cruiser", 3),
-    ("Submarine", 3),
+    # ("Carrier", 5),
+    # ("Battleship", 4),
+    # ("Cruiser", 3),
+    # ("Submarine", 3),
     ("Destroyer", 2)
 ]
 
@@ -77,7 +77,7 @@ class Board:
         Prompt the user for each ship's starting coordinate and orientation (H or V).
         Validates the placement; if invalid, re-prompts.
         """
-        player.send("Please place your ships manually on the board. You have 30 seconds to place each ship")
+        player.send("Please place your ships manually on the board. You have 30 seconds to place each ship.")
         for ship_name, ship_size in ships:
             while True:
                 self.print_display_grid(player, show_hidden_board=True)

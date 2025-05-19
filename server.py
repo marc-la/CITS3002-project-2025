@@ -64,7 +64,7 @@ def handle_reconnect(username, conn):
         waiting_lobby_queue.append(username)
         players[username].is_spectator.set()
         players[username].send(f"[INFO] You are now in the waiting lobby.")
-    logger.info(f"Player {username} reconnected to current game.")
+    logger.info(f"Player {username} reconnected.")
 
 def init_client(conn, addr):
     """
@@ -90,10 +90,6 @@ def init_client(conn, addr):
             if username.lower() == "quit":
                 logger.info(f"Spectator {addr} disconnected or quit.")
                 return None
-            # Check if user has disconnected
-            elif username == '':
-                logger.info(f"Client {addr} disconnected.")
-                return None
             # Check if username is already taken
             elif username in players:
                 if players[username].is_disconnected.is_set():
@@ -114,7 +110,8 @@ def init_client(conn, addr):
         logger.info(f"Client {addr} disconnected.")
         return None
     except Exception as e:
-        logger.error(f"Error receiving messages: {e}")
+        logger.info(f"Client {addr} disconnected.")
+        return None
 
 def receive_client_messages(conn, addr):
     """
@@ -122,6 +119,7 @@ def receive_client_messages(conn, addr):
     """
     username = init_client(conn, addr)
     if not username: return
+    players[username].send(f"[INFO] You can use the following command to send a message to all players: CHAT <message>")
 
     # Pre-process input before sending to battleship game
     try:
@@ -145,22 +143,18 @@ def receive_client_messages(conn, addr):
             elif line.strip().upper()[:4] == "CHAT":
                 send_chat_message(line[5:], username)
                 players[username].send(f"MESSAGE SENT")
-            # Check if user has diconnected
-            elif line == '':
-                logger.info(f"{username} disconnected.")
-                players[username].is_disconnected.set()
-                if username in waiting_lobby_queue:
-                    waiting_lobby_queue.remove(username)
-                    send_waiting_lobby_update("UPDATE")
-                break
             # Finally, if user is in the game, add input to their queue
             elif username in players and players[username].is_current_player.is_set():
                 players[username].input_queue.put(line.strip())
     except (BrokenPipeError, ConnectionResetError):
         players[username].is_disconnected.set()
         logger.info(f"Client {addr} disconnected.")
-    except Exception as e:
-        logger.error(f"Error receiving messages from {username}: {e}")
+    except Exception:
+        logger.info(f"{username} disconnected.")
+        players[username].is_disconnected.set()
+        if username in waiting_lobby_queue:
+            waiting_lobby_queue.remove(username)
+            send_waiting_lobby_update("UPDATE")
         players[username].is_disconnected.set()
 
 def check_start_game():

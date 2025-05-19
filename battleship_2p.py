@@ -85,6 +85,7 @@ def run_two_player_battleship_game(players, player0, player1):
     other_player.send(f"Welcome to Battleship! You will be playing against {current_player.username}")
     other_player.send("Waiting for the other player to place ships...")
 
+    broadcast_spectators(f"A game has started: [{player0}] vs [{player1}]", players, players[player0], players[player1])
     broadcast_spectators("Players are placing ships...", players, players[player0], players[player1])
     for i, player in enumerate(player_list):
         if i == 0:
