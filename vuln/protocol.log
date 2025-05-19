@@ -1,0 +1,4 @@
+2025-05-19 22:37:02,346 Thread-2 (receive_server_messages) protocol.src.packet DEBUG Received packet header: sequence=0, payload_length=54 bytes
+2025-05-19 22:37:02,346 Thread-2 (receive_server_messages) protocol.src.packet WARNING Payload corruption detected in packet 0; issuing NACK to request retransmission
+2025-05-19 22:37:02,346 Thread-2 (receive_server_messages) protocol.src.packet DEBUG Packet created: seq_num=0, type=NACK, length=0, checksum=0, payload_preview=b''
+2025-05-19 22:37:02,347 Thread-2 (receive_server_messages) protocol.src.packet DEBUG Received packet header: sequence=9066, payload_length=11031 bytes
