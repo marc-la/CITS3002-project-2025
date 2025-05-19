@@ -4,12 +4,13 @@ from threading import Thread, Event
 from config import *
 from battleship_2p import run_two_player_battleship_game
 from player import Player
-from protocol import send_message, receive_message
+from protocol import send_message, receive_message, ReplayError
 import time
 import logging
 
 logger = logging.getLogger("server")
 logger.setLevel(logging.INFO)
+logger.propagate = False
 
 # Add a handler with formatting only if not already present
 if not logger.hasHandlers():
@@ -23,6 +24,7 @@ players = {}                    # username as key, Player object as value
 currently_playing = []          # Store usernames of players
 waiting_lobby_queue = []        # Store usernames of spectators
 game_ongoing_event = Event()    # Event to indicate if a game is ongoing
+seen_nonces = set()             # Set to store seen nonces for replay attack prevention
 
 def send_chat_message(message, source_username):
     """
@@ -69,12 +71,17 @@ def init_client(conn, addr):
     initialize a client connection, either create a new Player object or reconnect to an existing one.
     Either returns the username or None if the user disconnected.
     """
-    send_message(conn, "[INFO] Welcome to the Battleship game!".encode('utf-8'))
-    send_message(conn, "[INFO] Please enter your username or type 'quit' to leave:".encode('utf-8'))
+    send_message(conn, "[INFO] Welcome to the Battleship game!".encode('utf-8'), key=KEY, use_timestamp=False)
+    send_message(conn, "[INFO] Please enter your username or type 'quit' to leave:".encode('utf-8'), key=KEY, use_timestamp=False)
 
     try:
         while True:
-            line = receive_message(conn).decode('utf-8')
+            try:
+                line = receive_message(conn, key=KEY, max_skew=None, seen_nonces=seen_nonces).decode('utf-8')
+            except ReplayError as e:
+                logger.warning(f"Replay attack detected: {e}")
+                continue
+
             # Check for enter key
             if line == '\n': continue
             username = line.strip()
@@ -93,7 +100,7 @@ def init_client(conn, addr):
                     handle_reconnect(username, conn)
                     return username
                 else:
-                    send_message(conn, f"[ERROR] Username '{username}' is already taken. Please choose another one.".encode('utf-8'))
+                    send_message(conn, f"[ERROR] Username '{username}' is already taken. Please choose another one.".encode('utf-8'), key=KEY, use_timestamp=False)
                     continue
             # Finally, if username is not taken, initialize the new player
             else:
@@ -117,7 +124,12 @@ def receive_client_messages(conn, addr):
     # Pre-process input before sending to battleship game
     try:
         while True:
-            line = receive_message(conn).decode('utf-8')
+            try:
+                line = receive_message(conn, key=KEY, max_skew=None, seen_nonces=seen_nonces).decode('utf-8')
+            except ReplayError as e:
+                logger.warning(f"Replay attack detected: {e}")
+                continue
+
             logger.info(f"Received message from {username}: {line.strip()}")
 
             # Check if user wants to quit

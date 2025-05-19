@@ -1,40 +1,30 @@
-# Packet class: header fields, pack()/unpack()
-
+import zlib
+import hmac
+import hashlib
 import logging
-from logging.handlers import QueueHandler, QueueListener
-from queue import Queue
 import socket
 import struct
+import time
+import os
 from enum import Enum
+from queue import Queue
+from logging.handlers import QueueHandler, QueueListener
 from .checksum import compute_checksum, verify_checksum
-from .errors import ChecksumError, SequenceError
+from .errors import ChecksumError, SequenceError, ReplayError
 from ..crypto import encrypt_payload, decrypt_payload, generate_iv
 
 # ------------------- Async Logging Setup ------------------------------
-
-# 1. Create a shared, thread‑safe queue
-_log_queue = Queue()  # unlimited size by default
-
-# 2. Configure protocol logger to enqueue
+_log_queue = Queue()
 _queue_handler = QueueHandler(_log_queue)
-
-# 3. Create real handlers (file, console, etc.)
 _file_handler = logging.FileHandler("protocol.log", mode="w", encoding="utf-8")
 _file_handler.setLevel(logging.DEBUG)
 _formatter = logging.Formatter(
     "%(asctime)s %(threadName)s %(name)s %(levelname)s %(message)s"
 )
 _file_handler.setFormatter(_formatter)
+_listener = QueueListener(_log_queue, _file_handler, respect_handler_level=True)
+_listener.start()
 
-# 4. Start listener thread
-_listener = QueueListener(
-    _log_queue,
-    _file_handler,
-    respect_handler_level=True
-)
-_listener.start()  # spins off background thread
-
-# Provide a clean shutdown hook
 def shutdown_logging():
     """
     Stop the listener thread and flush all handlers.
@@ -51,19 +41,20 @@ def shutdown_logging():
 _logger = logging.getLogger("protocol.src.packet")
 _logger.setLevel(logging.DEBUG)
 _logger.addHandler(_queue_handler)
-_logger.propagate = False  # Prevent propagation to root logger
+_logger.propagate = False
 
 # -------------------  Packet Definition  ------------------------------
-
 class PacketType(Enum):
     DATA = 0
     ACK = 1
     NACK = 2
 
-# Header: seq_num (H), packet_type (B), length (H), checksum (H)
-HEADER_FMT = ">H B H H"
-HEADER_SIZE = struct.calcsize(HEADER_FMT)
-MAX_PAYLOAD = 512  # maximum bytes per packet
+# Header: seq_num (H), packet_type (B), length (H), checksum (H), freshness (Q), mac_length (B)
+HEADER_FMT = ">H B H H Q B"
+HEADER_BASE = struct.calcsize(HEADER_FMT)
+MAC_ALGORITHM = 'sha256'
+MAC_TRUNC = 16  # bytes to include
+MAX_PAYLOAD = 512
 
 class Packet:
     """
@@ -72,10 +63,13 @@ class Packet:
       - packet_type: PacketType enum
       - length: payload length
       - checksum: 16-bit CRC truncated from CRC32
+      - freshness: 64-bit timestamp or nonce
+      - mac: truncated HMAC-SHA256
       - payload: up to MAX_PAYLOAD bytes
     """
 
-    def __init__(self, seq_num: int, packet_type: PacketType, payload: bytes):
+    def __init__(self, seq_num: int, packet_type: PacketType, payload: bytes,
+                 key: bytes, freshness: int):
         if not (0 <= seq_num < 2**16):
             raise ValueError("Sequence number must fit in 16 bits")
         if not isinstance(packet_type, PacketType):
@@ -85,13 +79,14 @@ class Packet:
 
         self.seq_num = seq_num
         self.packet_type = packet_type
+        self.key = key
+        self.freshness = freshness
 
+        # Encryption for DATA
         if packet_type == PacketType.DATA and payload:
             self.iv = generate_iv()
-            _logger.debug(f"[INIT] Plaintext before encryption (seq={seq_num}): {payload[:32]!r}")
-            encrypted_payload = encrypt_payload(payload, self.iv)
-            self.payload = self.iv + encrypted_payload
-            _logger.debug(f"[INIT] Encrypted payload (seq={seq_num}): {self.payload[:32]!r}")
+            encrypted = encrypt_payload(payload, self.iv)
+            self.payload = self.iv + encrypted
             self.plaintext = payload
         else:
             self.iv = None
@@ -101,10 +96,23 @@ class Packet:
         self.length = len(self.payload)
         self.checksum = compute_checksum(self.payload)
 
+        # Build header and compute MAC
+        header = struct.pack(
+            HEADER_FMT,
+            self.seq_num,
+            self.packet_type.value,
+            self.length,
+            self.checksum,
+            self.freshness,
+            MAC_TRUNC
+        )
+        full_mac = hmac.new(self.key, header + self.payload, MAC_ALGORITHM).digest()
+        self.mac = full_mac[:MAC_TRUNC]
+
         _logger.debug(
-            f"Packet created: seq_num={seq_num}, type={packet_type.name}, "
-            f"length={len(payload)}, checksum={self.checksum}, "
-            f"payload_preview={self.payload[:32]!r}{'...' if len(self.payload) > 32 else ''}"
+            f"Packet created: seq_num={self.seq_num}, type={self.packet_type.name}, "
+            f"freshness={self.freshness}, checksum={self.checksum}, mac={self.mac.hex()}, "
+            f"length={self.length}, payload_preview={self.payload[:32]!r}{'...' if self.length > 32 else ''}"
         )
 
     def pack(self) -> bytes:
@@ -114,99 +122,151 @@ class Packet:
             self.packet_type.value,
             self.length,
             self.checksum,
+            self.freshness,
+            len(self.mac)
         )
-        return header + self.payload
+        return header + self.mac + self.payload
 
     @classmethod
-    def unpack(cls, raw: bytes) -> "Packet":
-        if len(raw) < HEADER_SIZE:
+    def unpack(cls, raw: bytes, key: bytes,
+               max_skew: int = None, seen_nonces: set = None):
+        if len(raw) < HEADER_BASE:
             raise ValueError("Raw data too short for header")
 
-        seq_num, pkt_type_val, length, recv_checksum = struct.unpack(
-            HEADER_FMT, raw[:HEADER_SIZE]
+        # Parse header and fields
+        seq_num, pkt_type_val, length, recv_checksum, freshness, mac_len = struct.unpack(
+            HEADER_FMT, raw[:HEADER_BASE]
         )
-        try:
-            packet_type = PacketType(pkt_type_val)
-        except ValueError:
-            raise ValueError(f"Unknown packet type: {pkt_type_val}")
+        pkt_type = PacketType(pkt_type_val)
+        mac_start = HEADER_BASE
+        mac_end = mac_start + mac_len
+        recv_mac = raw[mac_start:mac_end]
+        payload = raw[mac_end:mac_end + length]
 
-        expected_total = HEADER_SIZE + length
-        if len(raw) != expected_total:
-            raise ValueError(f"Expected {expected_total} bytes, got {len(raw)}")
+        # Verify MAC
+        header = raw[:mac_start]
+        expected_mac = hmac.new(key, header + payload, MAC_ALGORITHM).digest()[:mac_len]
+        if not hmac.compare_digest(recv_mac, expected_mac):
+            raise ChecksumError(f"MAC mismatch on seq {seq_num}")
 
-        payload = raw[HEADER_SIZE:]
+        # ------------------ FRESHNESS CHECK ------------------
+        # 1) Timestamp skew check (if requested)
+        if max_skew is not None:
+            now = int(time.time())
+            if abs(now - freshness) > max_skew:
+                raise ReplayError(f"Timestamp out of skew: got {freshness}, now {now}")
+
+        # 2) Nonce replay check (if requested)
+        if seen_nonces is not None:
+            if freshness in seen_nonces:
+                raise ReplayError(f"Nonce replay: {freshness}")
+            seen_nonces.add(freshness)
+        # -----------------------------------------------------
+
+        # Verify checksum
         if not verify_checksum(payload, recv_checksum):
             raise ChecksumError(f"Bad checksum on seq {seq_num}")
 
-        if packet_type == PacketType.DATA and length > 16:
+        # Instantiate without re-running __init__
+        pkt = object.__new__(cls)
+        pkt.seq_num = seq_num
+        pkt.packet_type = pkt_type
+        pkt.key = key
+        pkt.freshness = freshness
+        pkt.length = length
+        pkt.checksum = recv_checksum
+        pkt.mac = recv_mac
+        pkt.payload = payload
+
+        # Decrypt if DATA
+        if pkt_type == PacketType.DATA and length > 16:
             iv = payload[:16]
             encrypted = payload[16:]
             decrypted = decrypt_payload(encrypted, iv)
-            _logger.debug(f"[UNPACK] Decrypted payload (seq={seq_num}): {decrypted[:32]!r}")
-            pkt = cls(seq_num, packet_type, decrypted)
             pkt.iv = iv
-            pkt.payload = payload  # still store original iv + ciphertext
-            pkt.plaintext = decrypted  # store decrypted version
-            return pkt
+            pkt.plaintext = decrypted
         else:
-            return cls(seq_num, packet_type, payload)
+            pkt.iv = None
+            pkt.plaintext = payload
 
-# ---------====---- Transport helpers with fragmentation and reassembly ---------------
+        _logger.debug(
+            f"Packet unpacked: seq_num={pkt.seq_num}, type={pkt.packet_type.name}, "
+            f"freshness={pkt.freshness}, checksum={pkt.checksum}, mac={pkt.mac.hex()}, "
+            f"length={pkt.length}, payload_preview={pkt.payload[:32]!r}{'...' if pkt.length > 32 else ''}"
+        )
+        return pkt
+    
+# -------------------  Transport Helpers  ------------------------------
 
-def send_message(sock: socket.socket, message: bytes) -> None:
+def send_message(sock: socket.socket, message: bytes,
+                 key: bytes, use_timestamp: bool = True) -> None:
     """
-    Break message into DATA packets, send in order, then terminal DATA packet with empty payload.
+    Fragment message into DATA packets with freshness (timestamp or nonce), send all, then terminator.
     """
     seq = 0
     offset = 0
     while offset < len(message):
         chunk = message[offset:offset + MAX_PAYLOAD]
-        pkt = Packet(seq, PacketType.DATA, chunk)
-        _logger.debug(f"Sending DATA packet: sequence={pkt.seq_num}, payload_size={pkt.length} bytes")
+        freshness = int(time.time()) if use_timestamp else struct.unpack(
+            ">Q", os.urandom(8)
+        )[0]
+        pkt = Packet(seq, PacketType.DATA, chunk, key, freshness)
+        _logger.debug(f"Sending DATA seq={seq}, freshness={freshness}, size={len(chunk)}")
         sock.sendall(pkt.pack())
         offset += len(chunk)
         seq = (seq + 1) % (2**16)
-    terminator = Packet(seq, PacketType.DATA, b"")
-    _logger.debug(f"Sending end-of-message marker (sequence={terminator.seq_num})")
-    sock.sendall(terminator.pack())
+    freshness = int(time.time()) if use_timestamp else struct.unpack(
+        ">Q", os.urandom(8)
+    )[0]
+    term = Packet(seq, PacketType.DATA, b"", key, freshness)
+    _logger.debug(f"Sending terminator seq={seq}, freshness={freshness}")
+    sock.sendall(term.pack())
 
 
-def receive_message(sock: socket.socket) -> bytes:
+def receive_message(sock: socket.socket,
+                    key: bytes,
+                    max_skew: int = None,
+                    seen_nonces: set = None) -> bytes:
     """
-    Receive DATA packets until empty DATA packet received.
-    Validate sequence, NACK corrupted, raise on out-of-order.
+    Receive DATA packets until empty DATA packet, validate sequence, freshness, and MAC.
+    Raises SequenceError, ChecksumError, ReplayError on violations.
     """
     buffers = {}
     expected_seq = 0
 
     while True:
-        hdr = sock.recv(HEADER_SIZE)
+        hdr = sock.recv(HEADER_BASE)
         if not hdr:
-            raise ConnectionError("Socket closed before header")
-        seq_num, pkt_type_val, length, checksum = struct.unpack(HEADER_FMT, hdr)
-        payload = sock.recv(length) if length else b""
+            raise ConnectionError("Socket closed during header recv")
+        _, _, length, _, _, mac_len = struct.unpack(HEADER_FMT, hdr)
+        mac_and_payload = sock.recv(mac_len + length)
+        raw = hdr + mac_and_payload
 
-        _logger.debug(f"Received packet header: sequence={seq_num}, payload_length={length} bytes")
-
+        seq_num, pkt_type_val, _, _, _, _ = struct.unpack(
+            HEADER_FMT, raw[:HEADER_BASE]
+        )
         if pkt_type_val == PacketType.NACK.value:
-            _logger.info(f"Received NACK for packet {seq_num}; will retransmit that sequence")
-            continue  # don’t treat as terminator
-
-        # DATA terminator
-        if pkt_type_val == PacketType.DATA.value and length == 0:
-            _logger.debug(f"Received end-of-message marker (sequence={seq_num}); reassembly complete")
-            break
-
-        # Normal DATA packet
-        try:
-            pkt = Packet.unpack(hdr + payload)
-        except ChecksumError:
-            _logger.warning(f"Payload corruption detected in packet {seq_num}; issuing NACK to request retransmission")
-            sock.sendall(Packet(seq_num, PacketType.NACK, b"").pack())
+            _logger.info(f"Received NACK for seq={seq_num}; ignoring")
             continue
 
+        try:
+            pkt = Packet.unpack(raw, key, max_skew=max_skew, seen_nonces=seen_nonces)
+        except ReplayError as e:
+            _logger.error(f"ReplayError: {e}")
+            raise
+        except ChecksumError as e:
+            _logger.error(f"ChecksumError: {e}")
+            raise
+        except SequenceError as e:
+            _logger.error(f"SequenceError: {e}")
+            raise
+
+        if pkt.packet_type == PacketType.DATA and pkt.length == 0:
+            _logger.debug(f"Terminator received seq={pkt.seq_num}")
+            break
+
         if pkt.seq_num != expected_seq:
-            raise SequenceError(f"Expected seq={expected_seq}, got={pkt.seq_num}")
+            raise SequenceError(f"Expected {expected_seq}, got {pkt.seq_num}")
 
         buffers[pkt.seq_num] = pkt.plaintext
         expected_seq = (expected_seq + 1) & 0xFFFF

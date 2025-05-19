@@ -5,9 +5,11 @@ from threading import Event, Thread
 from config import *
 from protocol import send_message, receive_message
 import logging
+import argparse
 
 logger = logging.getLogger("client")
 logger.setLevel(logging.INFO)
+logger.propagate = False
 
 # Add a handler with formatting only if not already present
 if not logger.hasHandlers():
@@ -20,23 +22,27 @@ exit_condition = Event()
 
 def receive_server_messages(conn):
     while not exit_condition.is_set():
-        line = receive_message(conn).decode('utf-8')
+        line = receive_message(conn, key=KEY).decode('utf-8')
         if not line:
             logger.info("Server disconnected.")
             exit_condition.set()
-            break
+            break 
         print(line)
 
 def main():
+    parser = argparse.ArgumentParser(description="Client for the game server.")
+    parser.add_argument('-p', '--port', type=int, default=PORT, help='Port to connect to (default from config.py)')
+    args = parser.parse_args()
+
     with socket(AF_INET, SOCK_STREAM) as conn:
-        conn.connect((HOST, PORT))
-        print(f"Connected to server at {HOST}:{PORT}")
+        conn.connect((HOST, args.port))
+        print(f"Connected to server at {HOST}:{args.port}")
         receiver_thread = Thread(target=receive_server_messages, args=(conn,), daemon=True)
         receiver_thread.start()
         try:
             while not exit_condition.is_set():
                 user_input = stdin.readline()
-                send_message(conn, user_input.encode('utf-8'))
+                send_message(conn, user_input.encode('utf-8'), key=KEY, use_timestamp=False)
                 if user_input.lower() in ['quit', 'exit', 'forfeit']:
                     exit_condition.set()
                     logger.info("Exiting...")
